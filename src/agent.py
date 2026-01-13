@@ -8,37 +8,46 @@ from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 from .llm import LLMClient
 from .context import ContextManager
+from .skills import SkillManager
 
 
 class Thought(BaseModel):
     """Agent thought"""
     reasoning: str = Field(description="Current reasoning")
-    next_action: str = Field(description="Next action: 'use_tool', 'use_skill', or 'finish'")
+    next_action: str = Field(description="Next action: 'use_tool' or 'finish'")
     tool_name: Optional[str] = Field(default=None, description="Tool to use")
     tool_parameters: Optional[Dict[str, Any]] = Field(default=None, description="Tool parameters")
-    skill_name: Optional[str] = Field(default=None, description="Skill to use")
-    skill_parameters: Optional[Dict[str, Any]] = Field(default=None, description="Skill parameters")
 
 
 class MinimalAgent:
     """
     Minimal agent with model, tools, skills, loop, and context engineering
 
-    Skills are higher-level abstractions that:
-    - Combine multiple tools
-    - Execute multi-step workflows
-    - Provide clear input/output contracts
+    Skills are prompt-based workflows managed by the SkillManager (meta-tool):
+    - Skills are defined as SKILL.md files with prompt instructions
+    - SkillManager is a tool that manages all available skills
+    - When invoked, skills inject their prompts into the conversation
+    - Skills follow Claude Agent Skills architecture
     """
 
     def __init__(
         self,
         tools: List[Any],
-        skills: Optional[List[Any]] = None,
+        skills_dirs: Optional[List[str]] = None,
         workspace_dir: str = "workspace"
     ):
         self.llm = LLMClient()
+
+        # Initialize tools
         self.tools = {tool.name: tool for tool in tools}
-        self.skills = {skill.name: skill for skill in (skills or [])}
+
+        # Initialize skill manager (meta-tool)
+        self.skill_manager = SkillManager(skills_dirs=skills_dirs)
+
+        # Add skill manager as a tool
+        self.tools["skill"] = self.skill_manager
+
+        # Initialize context manager
         self.context = ContextManager(max_context_length=8000, workspace_dir=workspace_dir)
 
         # Initialize with system prompt
@@ -50,13 +59,12 @@ class MinimalAgent:
         Get system prompt (stable for KV-cache)
 
         Includes:
-        - Tool descriptions
-        - Skill descriptions
+        - Tool descriptions (including Skill tool)
         - Usage guidelines
         """
         prompt_parts = ["You are a helpful AI agent."]
 
-        # Add tools
+        # Add tools (including skill as a tool)
         if self.tools:
             prompt_parts.append("\n## Available Tools\n")
             tools_desc = "\n".join([
@@ -65,34 +73,23 @@ class MinimalAgent:
             ])
             prompt_parts.append(tools_desc)
 
-        # Add skills
-        if self.skills:
-            prompt_parts.append("\n## Available Skills\n")
-            prompt_parts.append("Skills are higher-level operations that combine multiple tools:\n")
-            skills_desc = "\n".join([
-                f"- {name}: {skill.description}\n  Required tools: {', '.join(skill.required_tools)}"
-                for name, skill in self.skills.items()
-            ])
-            prompt_parts.append(skills_desc)
-
         # Add guidelines
         prompt_parts.append(f"""
 
 ## Guidelines
 
-1. Prefer using skills when they match your task - they're optimized for common workflows.
-2. When you need to use a tool, respond with tool name and parameters.
-3. When you need to use a skill, respond with skill name and parameters.
+1. Use tools to accomplish tasks efficiently.
+2. The 'skill' tool manages specialized workflows - use it for complex multi-step tasks.
+3. When you need to use a tool, respond with tool name and parameters.
 4. When task is complete, set next_action to 'finish' and provide a final answer.
-5. If a tool or skill fails, try a different approach.
+5. If a tool fails, try a different approach.
 6. Learn from errors - they are part of context for improvement.
-7. Use tools and skills efficiently - avoid unnecessary calls.
+7. Use tools efficiently - avoid unnecessary calls.
 8. Keep user's goals in mind throughout the task.
 
 ## Action Format
 
 - For tools: Set next_action='use_tool', specify tool_name and tool_parameters
-- For skills: Set next_action='use_skill', specify skill_name and skill_parameters
 - To finish: Set next_action='finish' and provide final answer
 """)
 
@@ -112,20 +109,6 @@ class MinimalAgent:
             for name, tool in self.tools.items()
         ]
 
-    def get_skills_schema(self) -> List[Dict[str, Any]]:
-        """Get skills schema for LLM"""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": f"skill_{name}",
-                    "description": f"[SKILL] {skill.description}\nRequired tools: {', '.join(skill.required_tools)}",
-                    "parameters": skill.parameters
-                }
-            }
-            for name, skill in self.skills.items()
-        ]
-
     async def think(self) -> Thought:
         """
         Generate thought using current context
@@ -140,11 +123,57 @@ class MinimalAgent:
         return response
 
     async def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Any:  # noqa: ANN401
-        """Execute tool and log to context"""
+        """
+        Execute tool and log to context
+
+        Special handling for 'skill' tool:
+        - Invokes skill manager to get context messages
+        - Injects messages into conversation
+        - Does NOT complete immediately, continues loop with enhanced context
+        """
         tool = self.tools.get(tool_name)
         if not tool:
             raise ValueError(f"Tool not found: {tool_name}")
 
+        # Special handling for skill tool
+        if tool_name == "skill":
+            command = parameters.get("command")
+            if not command:
+                raise ValueError("Skill tool requires 'command' parameter")
+
+            # Get current user request from context
+            user_request = self.context.messages[-1].get("content", "") if self.context.messages else ""
+
+            # Invoke skill to get context messages
+            context_messages, error = self.skill_manager.invoke(
+                command=command,
+                user_request=user_request,
+                tools_available=self.tools
+            )
+
+            if error:
+                # Log skill invocation error
+                self.context.add_tool_result(
+                    tool_name=tool_name,
+                    result=error,
+                    is_error=True
+                )
+                raise ValueError(error)
+
+            # Inject skill context messages into conversation
+            for msg in context_messages:
+                if msg.get("meta"):
+                    # Hidden message (skill prompt)
+                    self.context.add_system_prompt(msg["content"])
+                else:
+                    # User-visible message
+                    self.context.add_assistant_response(msg["content"])
+
+            # Return early - skill injection doesn't complete the tool call
+            # The agent will continue in the enhanced context
+            return None
+
+        # Normal tool execution
         result = await tool.execute(**parameters)
 
         # Log to context (preserve errors for learning)
@@ -153,37 +182,6 @@ class MinimalAgent:
             result=result.summary if result.status == "success" else result.error,
             is_error=result.status != "success"
         )
-
-        return result
-
-    async def execute_skill(self, skill_name: str, parameters: Dict[str, Any]):  # noqa: ANN401
-        """Execute skill and log to context"""
-        skill = self.skills.get(skill_name)
-        if not skill:
-            raise ValueError(f"Skill not found: {skill_name}")
-
-        # Validate required tools
-        missing_tools = set(skill.required_tools) - set(self.tools.keys())
-        if missing_tools:
-            raise ValueError(f"Skill '{skill_name}' requires tools: {missing_tools}")
-
-        result = await skill.execute(tools=self.tools, **parameters)
-
-        # Log skill execution to context
-        self.context.add_assistant_response(
-            f"Executed skill '{skill_name}'\n"
-            f"Status: {result.status}\n"
-            f"Steps completed: {len(result.steps_completed)}\n"
-            f"Summary: {result.summary}"
-        )
-
-        if result.errors:
-            for error in result.errors:
-                self.context.add_tool_result(
-                    tool_name=f"skill_{skill_name}",
-                    result=error,
-                    is_error=True
-                )
 
         return result
 
@@ -206,7 +204,8 @@ class MinimalAgent:
         print(f"\n{'='*60}")
         print(f"Task: {user_request}")
         print(f"{'='*60}")
-        print(f"Tools: {len(self.tools)}, Skills: {len(self.skills)}")
+        print(f"Tools: {len(self.tools)} (including skill manager)")
+        print(f"Available skills: {', '.join(self.skill_manager.get_skill_names()) or 'None'}")
         print(self.context.get_summary())
 
         for step in range(max_steps):
@@ -229,8 +228,10 @@ class MinimalAgent:
                 if thought.tool_name and thought.tool_parameters:
                     try:
                         result = await self.execute_tool(thought.tool_name, thought.tool_parameters)
-                        print(f"  Tool: {thought.tool_name}")
-                        print(f"  Result: {result.summary}")
+                        if result is not None:
+                            # Skip logging for skill tool (returns None)
+                            print(f"  Tool: {thought.tool_name}")
+                            print(f"  Result: {result.summary}")
                     except Exception as e:
                         # Log error to context (Manus: preserve errors)
                         self.context.add_tool_result(
@@ -239,27 +240,6 @@ class MinimalAgent:
                             is_error=True
                         )
                         print(f"  Tool failed: {thought.tool_name}")
-                        print(f"  Error: {e}")
-
-            # Execute skill
-            elif thought.next_action == "use_skill":
-                if thought.skill_name and thought.skill_parameters:
-                    try:
-                        result = await self.execute_skill(thought.skill_name, thought.skill_parameters)
-                        print(f"  Skill: {thought.skill_name}")
-                        print(f"  Status: {result.status}")
-                        print(f"  Summary: {result.summary}")
-                        print(f"  Steps: {len(result.steps_completed)}")
-                        if result.duration_ms:
-                            print(f"  Duration: {result.duration_ms:.2f}ms")
-                    except Exception as e:
-                        # Log error to context
-                        self.context.add_tool_result(
-                            tool_name=f"skill_{thought.skill_name}",
-                            result=str(e),
-                            is_error=True
-                        )
-                        print(f"  Skill failed: {thought.skill_name}")
                         print(f"  Error: {e}")
 
         return "Maximum steps reached. Task incomplete."

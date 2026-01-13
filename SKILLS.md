@@ -1,392 +1,488 @@
-# Skills System
+# Skills System - Prompt-Based Architecture
+
+Based on Claude Agent Skills design principles from [Deep Dive into Claude Skills](https://baoyu.io/translations/claude-skills-deep-dive).
 
 ## Overview
 
-Skills are higher-level abstractions that combine multiple tools to execute complex, multi-step workflows.
+The Skills System is a **prompt-based meta-tool architecture** that extends Claude's capabilities through carefully crafted instructions and resource bindings. Unlike traditional code-based approaches, skills are defined as Markdown files with prompt instructions.
 
-## What are Skills?
+## Core Design Principles
 
-Skills are to Tools what Functions are to Instructions:
-- **Tools**: Single-purpose operations (e.g., "read file", "search web")
-- **Skills**: Multi-step workflows (e.g., "research topic and save report")
+### 1. Prompt-Based, Not Code-Based
 
-### Key Differences
+Skills do not execute code. Instead, they inject specialized prompt instructions into the conversation context. This makes skills:
+- **Easier to create**: Write Markdown, not Python
+- **More flexible**: Prompt-based natural language instructions
+- **Safer**: No code execution risks
+- **Composable**: Skills can combine naturally
 
-| Aspect | Tools | Skills |
-|---------|--------|---------|
-| **Complexity** | Single operation | Multi-step workflow |
-| **Composition** | Standalone | Combines multiple tools |
-| **Abstraction** | Low-level | High-level |
-| **Granularity** | Fine | Coarse |
-| **Use Case** | Primitive operations | Complete workflows |
+### 2. Meta-Tool Pattern
+
+The system uses a **meta-tool** approach:
+- **Skill tool (capital S)**: A single tool that manages all skills
+- **skills (lowercase s)**: Individual skills defined as SKILL.md files
+
+The Skill tool appears in the tools list alongside other tools like Read, Write, Bash, etc.
+
+### 3. Progressive Disclosure
+
+Skills follow progressive disclosure principles:
+- Show minimal information initially
+- Inject detailed instructions only when needed
+- Keep main system prompt stable for KV-cache efficiency
+- Load resources on-demand (scripts, references, assets)
+
+### 4. Context Modification
+
+When a skill is invoked, it modifies the conversation context:
+- **User-visible message**: Brief status (e.g., "The research skill is now active")
+- **Hidden message**: Full skill prompt with detailed instructions
+- **Tool filtering**: Restricts available tools based on skill's `allowed-tools`
+- **Resource binding**: Provides access to scripts, references, and assets
 
 ## Architecture
 
+### Components
+
 ```
-Skill
-├── name              # Unique identifier
-├── description        # What it does
-├── required_tools    # Tools needed
-├── parameters        # Input schema
-└── execute()         # Implementation
-    └── Returns SkillResult
-        ├── status
-        ├── result
-        ├── steps_completed
-        ├── errors
-        ├── duration_ms
-        └── summary
+MinimalAgent
+├── SkillManager (Meta-Tool)
+│   ├── SkillLoader (Loads SKILL.md files)
+│   ├── SkillContextManager (Injects skill prompts)
+│   └── SkillRegistry (Manages available skills)
+├── Tools (Read, Write, Bash, etc.)
+└── ContextManager (Manages conversation context)
 ```
 
-## Benefits
+### Skill Directory Structure
 
-### 1. Efficiency
-- Fewer decisions for the agent (use skill instead of planning)
-- Optimized workflows (skill authors know best practices)
-- Parallel execution within skill (no agent overhead)
+Each skill is a directory containing:
 
-### 2. Reusability
-- Common workflows packaged as skills
-- Share skills across tasks
-- Build skill library over time
+```
+skill-name/
+├── SKILL.md              # Required: Skill definition (frontmatter + prompt)
+├── scripts/              # Optional: Executable Python/Bash scripts
+├── references/           # Optional: Documentation files (loaded into context)
+└── assets/               # Optional: Templates and binary files (referenced only)
+```
 
-### 3. Maintainability
-- Centralized logic for complex tasks
-- Easier to update workflows
-- Testable in isolation
+### SKILL.md Format
 
-### 4. Clarity
-- Clear input/output contracts
-- Documented step-by-step execution
-- Better error handling
+```markdown
+---
+name: skill-name
+description: Brief description of what this skill does
+version: 1.0.0
+allowed-tools: Tool1, Tool2, Tool3
+model: gpt-4-turbo
+disable-model-invocation: false
+---
 
-## Included Skills
+# Skill Name
 
-### 1. ResearchSkill
-**Purpose**: Research a topic and save findings to a file
+You are a [role] specialized in [domain].
 
-**Tools Required**: `search_google`, `file_write`
+## Purpose
 
-**Parameters**:
-- `topic` (string, required): Topic to research
-- `max_results` (number, optional): Number of search results (default: 5)
-- `output_file` (string, optional): Output file (default: `research_results.md`)
+[Brief description of what this skill does]
 
-**Workflow**:
-1. Search for topic on the web
-2. Compile findings from search results
-3. Format findings as markdown
-4. Write to output file
+## When to Use
 
-**Example**:
+Use this skill when the user asks you to:
+- [Task 1]
+- [Task 2]
+- [Task 3]
+
+## Workflow
+
+Follow this step-by-step process:
+
+### Step 1: [Action]
+
+[Detailed instructions]
+
+### Step 2: [Action]
+
+[Detailed instructions]
+
+...
+
+## Best Practices
+
+[List of best practices]
+
+## Error Handling
+
+[How to handle errors]
+
+## Examples
+
+[Example usage scenarios]
+
+## Output Format
+
+[Format of expected output]
+
+## Tips for Effective Execution
+
+[Additional guidance]
+
+## Context Variables
+
+You have access to:
+- Base directory: {baseDir}
+- User request: [from invocation]
+- Available tools: [list]
+
+Use these to guide your actions.
+```
+
+### Frontmatter Fields
+
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `name` | Yes | string | Unique skill identifier |
+| `description` | Yes | string | Brief description (shown in tool description) |
+| `version` | No | string | Skill version (default: "1.0.0") |
+| `allowed-tools` | No | string | Comma-separated list of allowed tools |
+| `model` | No | string | Preferred model for this skill |
+| `disable-model-invocation` | No | boolean | If true, skill can only be manually invoked |
+
+## Skill Execution Flow
+
+```
+1. User Request
+   ↓
+2. Agent Thinks
+   ↓
+3. Agent Chooses Skill
+   ↓
+4. Agent Calls Skill Tool (with command: "skill-name")
+   ↓
+5. Skill Manager:
+   - Looks up skill
+   - Validates allowed-tools
+   - Creates context messages
+   ↓
+6. Context Injection:
+   - User-visible message: "The skill-name skill is now active"
+   - Hidden message: [Full skill prompt from SKILL.md]
+   ↓
+7. Agent Continues (with enhanced context)
+   ↓
+8. Agent Executes Task (following skill instructions)
+   ↓
+9. Task Complete
+```
+
+## Resource Bindings
+
+### scripts/
+
+Executable automation scripts:
+- Python scripts (.py)
+- Bash scripts (.sh)
+- Can be executed using Bash tool
+- Used for complex operations
+
+**Example:**
 ```python
-result = await skill.execute(
-    tools=tools,
-    topic="artificial intelligence",
-    max_results=10,
-    output_file="ai_research.md"
-)
+# scripts/process_data.py
+import sys
+
+# Data processing logic
+print("Processing data...")
 ```
 
-### 2. MultiTopicResearchSkill
-**Purpose**: Research multiple topics and compile a comprehensive report
+### references/
 
-**Tools Required**: `search_google`, `file_write`
+Documentation loaded into context:
+- Markdown files (.md)
+- Text files (.txt)
+- PDF files (.pdf)
+- Loaded using Read tool on-demand
 
-**Parameters**:
-- `topics` (array of strings, required): List of topics to research
-- `output_file` (string, optional): Output file (default: `multi_topic_report.md`)
+**Example:**
+```markdown
+# references/api_documentation.md
 
-**Workflow**:
-1. Search for each topic
-2. Compile results from all searches
-3. Format as comprehensive report
-4. Write to output file
+## API Reference
 
-**Example**:
-```python
-result = await skill.execute(
-    tools=tools,
-    topics=["AI", "Machine Learning", "Deep Learning"],
-    output_file="tech_report.md"
-)
+Detailed API documentation here...
 ```
 
-## Creating Custom Skills
+### assets/
 
-### Step 1: Inherit from Skill Base
+Files referenced but not loaded into context:
+- Templates
+- Binary files
+- Images
+- Accessible via paths but not auto-loaded
 
-```python
-from src.skills.base import Skill, SkillResult
-from typing import Dict, Any, List
+**Example:**
+```markdown
+# assets/report_template.md
 
-class MyCustomSkill(Skill):
-    @property
-    def name(self) -> str:
-        return "my_custom_skill"  # Use pattern: category_action
-
-    @property
-    def description(self) -> str:
-        return "What this skill does"
-
-    @property
-    def required_tools(self) -> List[str]:
-        return ["tool1", "tool2"]  # Tools needed
-```
-
-### Step 2: Define Parameters
-
-```python
-    @property
-    def parameters(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "param1": {
-                    "type": "string",
-                    "description": "Description"
-                },
-                "param2": {
-                    "type": "number",
-                    "description": "Description",
-                    "default": 10
-                }
-            },
-            "required": ["param1"]
-        }
-```
-
-### Step 3: Implement Execute Method
-
-```python
-    async def execute(self, tools: Dict[str, Any], **kwargs) -> SkillResult:
-        import time
-        start_time = time.time()
-        steps = []
-
-        # Extract parameters
-        param1 = kwargs.get("param1", "")
-        param2 = kwargs.get("param2", 10)
-
-        # Step 1: Use tool1
-        steps.append({
-            "step": 1,
-            "action": "use_tool1",
-            "description": "Step 1 description"
-        })
-
-        result1 = await tools["tool1"].execute(...)
-
-        if result1.status != "success":
-            return self._create_error_result(
-                errors=[f"Tool1 failed: {result1.error}"],
-                steps=steps,
-                summary="Skill failed at step 1",
-                duration_ms=(time.time() - start_time) * 1000
-            )
-
-        steps[0]["result"] = "Step 1 completed"
-
-        # Step 2: Use tool2
-        steps.append({
-            "step": 2,
-            "action": "use_tool2",
-            "description": "Step 2 description"
-        })
-
-        result2 = await tools["tool2"].execute(...)
-
-        steps[1]["result"] = "Step 2 completed"
-
-        # Return success
-        duration_ms = (time.time() - start_time) * 1000
-        return self._create_success_result(
-            result={
-                "param1": param1,
-                "param2": param2
-            },
-            steps=steps,
-            summary=f"Successfully completed custom skill",
-            duration_ms=duration_ms
-        )
-```
-
-### Step 4: Register Skill with Agent
-
-```python
-from src.agent import MinimalAgent
-from src.skills import MyCustomSkill
-
-agent = MinimalAgent(
-    tools=[...],
-    skills=[MyCustomSkill()]
-)
+Template for generating reports...
 ```
 
 ## Best Practices
 
-### 1. Naming Convention
-- Use descriptive names: `research_topic`, `analyze_data`, `generate_report`
-- Follow pattern: `category_action`
-- Be specific but concise
+### Writing Effective SKILL.md
 
-### 2. Tool Validation
-```python
-# Always validate required tools
-self.validate_tools(tools)  # Raises ValueError if missing
+1. **Keep it focused**: Main prompt under 5,000 words
+2. **Use imperative mood**: "Analyze code..." not "You should analyze..."
+3. **Structure clearly**: Overview → Purpose → Workflow → Examples → Tips
+4. **Use {baseDir}**: Always use the {baseDir} variable for paths
+5. **Provide examples**: Include concrete usage examples
+6. **Handle errors**: Explicit error handling instructions
+7. **Specify output**: Clear output format requirements
+
+### Skill Design Patterns
+
+1. **Script Automation**: Offload complex operations to scripts/
+2. **Read-Process-Write**: File transformation workflows
+3. **Search-Analyze-Report**: Information gathering and synthesis
+4. **Guided Multi-Step**: Complex tasks broken into steps
+5. **Template-Based Generation**: Output from templates in assets/
+
+### Security
+
+1. **Minimum Privilege**: Only include necessary tools in allowed-tools
+2. **Disable Auto-Invocation**: Use `disable-model-invocation: true` for dangerous operations
+3. **Validate Inputs**: Always validate user inputs in skill instructions
+4. **Sanitize Paths**: Never trust file paths, always validate
+
+## Included Skills
+
+### Research Skill
+
+**Location**: `skills/research/SKILL.md`
+
+**Purpose**: Research a topic on the web, compile findings, and save to a markdown file
+
+**Required Tools**: `search_google`, `file_write`
+
+**Resources**:
+- `references/research_tips.md`: Research best practices
+- `assets/report_template.md`: Report generation template
+
+**Usage**:
+```
+User: "Research artificial intelligence trends in 2024"
+
+Agent: [Decides to use research skill]
+       → Calls skill tool with command: "research"
+       → Skill prompt is injected
+       → Agent follows research workflow
+       → Searches web, compiles findings, saves report
 ```
 
-### 3. Step Tracking
-```python
-# Track each step for debugging and transparency
-steps.append({
-    "step": step_number,
-    "action": "action_name",
-    "description": "What happened",
-    "result": "Outcome"  # Optional
-})
+### PDF Skill
+
+**Location**: `skills/pdf/SKILL.md`
+
+**Purpose**: Work with PDF documents including extraction, creation, merging, and form filling
+
+**Required Tools**: `Read`, `Write`
+
+**Usage**:
+```
+User: "Extract text from document.pdf"
+
+Agent: [Decides to use pdf skill]
+       → Calls skill tool with command: "pdf"
+       → Skill prompt is injected
+       → Agent follows PDF processing workflow
+       → Extracts text, saves to file
 ```
 
-### 4. Error Handling
-```python
-# Collect all errors, don't fail immediately
-errors = []
-if result1.status == "failed":
-    errors.append(f"Step 1 failed: {result1.error}")
+## Creating Custom Skills
 
-# Continue or return based on severity
-```
-
-### 5. Performance Tracking
-```python
-import time
-
-start_time = time.time()
-# ... execute skill ...
-duration_ms = (time.time() - start_time) * 1000
-
-return self._create_success_result(..., duration_ms=duration_ms)
-```
-
-## Skill Result Structure
-
-```python
-SkillResult(
-    skill_name="skill_name",
-    status="success",  # or "failed"
-    result={...},  # Skill-specific data
-    steps_completed=[...],  # Step-by-step execution
-    errors=[...],  # List of errors (if any)
-    timestamp="2024-01-01T00:00:00",
-    summary="Human-readable summary",
-    duration_ms=1234.56
-)
-```
-
-## Usage Examples
-
-### Direct Skill Execution
-
-```python
-from src.skills import ResearchSkill
-from src.tools import SearchGoogleTool, FileWriteTool
-
-# Create tools
-tools = {
-    "search_google": SearchGoogleTool(),
-    "file_write": FileWriteTool()
-}
-
-# Create and execute skill
-skill = ResearchSkill()
-result = await skill.execute(
-    tools=tools,
-    topic="machine learning",
-    max_results=5
-)
-
-print(result.summary)
-print(f"Steps: {len(result.steps_completed)}")
-```
-
-### Agent with Skills
-
-```python
-from src.agent import MinimalAgent
-from src.skills import ResearchSkill, MultiTopicResearchSkill
-
-# Create agent with skills
-agent = MinimalAgent(
-    tools=[SearchGoogleTool(), FileWriteTool()],
-    skills=[ResearchSkill(), MultiTopicResearchSkill()]
-)
-
-# Agent will choose to use skill when appropriate
-result = await agent.run("Research AI and save findings")
-```
-
-## Testing Skills
+### Step 1: Create Skill Directory
 
 ```bash
-# Run skill tests
-python3 test_skills.py
+mkdir -p skills/my-skill/{scripts,references,assets}
 ```
 
-Tests verify:
-- Skill import and creation
-- Tool validation
-- Parameter validation
-- Execution with real tools
-- Result structure
-- Error handling
+### Step 2: Create SKILL.md
 
-## Future Skills Ideas
+```markdown
+---
+name: my-skill
+description: What this skill does
+version: 1.0.0
+allowed-tools: Tool1, Tool2
+---
 
-Potential skills to implement:
+# My Skill
 
-1. **AnalyzeDocumentSkill**
-   - Read document
-   - Analyze content
-   - Extract key information
-   - Generate summary
+You are a [role]...
 
-2. **GenerateReportSkill**
-   - Collect data from multiple sources
-   - Format as professional report
-   - Save to file
-
-3. **CodeReviewSkill**
-   - Read code file
-   - Analyze for issues
-   - Suggest improvements
-   - Generate review report
-
-4. **DataProcessingSkill**
-   - Read data file
-   - Process/transform data
-   - Save processed data
-
-5. **WebCrawlSkill**
-   - Search for multiple related queries
-   - Follow relevant links
-   - Compile comprehensive data
-
-## Integration with Agent
-
-The agent's thought process now includes:
-
-```
-1. Analyze task
-2. Check if a matching skill exists
-3. If yes → Use skill (faster, optimized)
-4. If no → Plan and use tools individually
-5. Execute chosen approach
-6. Observe results
-7. Repeat until complete
+[Rest of skill content]
 ```
 
-This provides:
-- **Efficiency**: Skills are pre-optimized workflows
-- **Reliability**: Tested skill implementations
-- **Extensibility**: Easy to add new capabilities
-- **Transparency**: Step-by-step execution tracking
+### Step 3: Add Resources (Optional)
+
+Add scripts, references, or assets as needed.
+
+### Step 4: Test
+
+Restart the agent to load the new skill, then test with a user request.
+
+## Example: Creating a Data Analysis Skill
+
+```bash
+mkdir -p skills/data-analysis/{scripts,references}
+```
+
+Create `skills/data-analysis/SKILL.md`:
+
+```markdown
+---
+name: data-analysis
+description: Analyze data and generate reports
+version: 1.0.0
+allowed-tools: Read, Write, Bash
+---
+
+# Data Analysis Skill
+
+You are a data analyst specializing in statistical analysis and reporting.
+
+## Purpose
+
+Analyze data files and generate comprehensive reports.
+
+## Workflow
+
+1. Read the data file using Read tool
+2. Load analysis script from scripts/
+3. Execute analysis
+4. Generate report
+5. Save results
+
+...
+```
+
+Add `scripts/analyze.py`:
+
+```python
+import pandas as pd
+import sys
+
+# Analysis logic
+df = pd.read_csv(sys.argv[1])
+print(df.describe())
+```
+
+## Benefits of Prompt-Based Skills
+
+### For Users
+
+1. **Faster Execution**: Pre-optimized workflows
+2. **Better Reliability**: Tested, battle-proven patterns
+3. **Clearer Results**: Structured output formats
+4. **Easy to Understand**: Read SKILL.md to know what happens
+
+### For Developers
+
+1. **Easier to Create**: Write Markdown, not Python
+2. **Easier to Modify**: Edit prompts, no code compilation
+3. **Easier to Share**: Share SKILL.md files
+4. **Easier to Test**: Test prompts directly in conversation
+
+## Comparison: Old vs New Skills System
+
+| Aspect | Old System (Code-Based) | New System (Prompt-Based) |
+|--------|------------------------|---------------------------|
+| **Definition** | Python classes | Markdown files |
+| **Execution** | Code execution | Prompt injection |
+| **Extensibility** | Requires coding | Write Markdown |
+| **Complexity** | Higher | Lower |
+| **Flexibility** | Limited | High |
+| **Safety** | Code execution risks | No code execution |
+| **Learning Curve** | Steeper | Gentler |
+| **Sharing** | Code files | Simple Markdown files |
+
+## Advanced Features
+
+### Skill Versioning
+
+Use the `version` field to manage skill versions:
+
+```yaml
+---
+version: 2.0.0
+...
+```
+
+### Model Selection
+
+Specify preferred model for complex skills:
+
+```yaml
+---
+model: gpt-4-turbo
+...
+```
+
+### Tool Restrictions
+
+Limit tools to minimum required:
+
+```yaml
+---
+allowed-tools: Read, Write
+...
+```
+
+### Manual Invocation Only
+
+For dangerous operations:
+
+```yaml
+---
+disable-model-invocation: true
+...
+```
+
+## Troubleshooting
+
+### Skill Not Loading
+
+- Check SKILL.md is in correct location
+- Verify frontmatter syntax (YAML between `---` lines)
+- Ensure `name` field is unique
+
+### Skill Not Working
+
+- Read the SKILL.md to understand expected behavior
+- Check if required tools are available
+- Review skill execution logs
+
+### Context Too Long
+
+- Keep skill prompts concise (< 5,000 words)
+- Use progressive disclosure
+- Load references on-demand
+
+## Resources
+
+- [Claude Skills Deep Dive](https://baoyu.io/translations/claude-skills-deep-dive) - Original article
+- SKILL.md files in `skills/` directory - Example skills
+- [Manus Context Engineering](./CONTEXT_ENGINEERING.md) - Context management principles
+
+## Summary
+
+The new Skills System is a **prompt-based meta-tool architecture** that:
+
+✅ Defines skills as Markdown files (SKILL.md)
+✅ Uses a meta-tool (Skill tool) to manage all skills
+✅ Injects skill prompts into conversation context
+✅ Supports resource bindings (scripts, references, assets)
+✅ Implements progressive disclosure
+✅ Follows least-privilege security principles
+✅ Makes skill creation accessible to non-programmers
+
+This brings the Minimal Agent closer to Claude's native skills architecture, providing a powerful, flexible, and easy-to-use system for extending agent capabilities.
