@@ -29,6 +29,7 @@ ENV/
 env/
 .venv
 
+
 # IDE
 .vscode/
 .idea/
@@ -42,6 +43,7 @@ env/
 
 # Workspace
 mates_workspace/
+workspace/
 *.log
 
 # OS
@@ -56,4 +58,3 @@ htmlcov/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
-workspace/

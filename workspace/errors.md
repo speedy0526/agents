@@ -23,3 +23,8 @@
 **Tool:** skill
 **Error:** 'ContextManager' object has no attribute 'messages'
 
+## Error - 2026-01-13T22:54:17.500824
+
+**Tool:** research
+**Error:** Tool not found: research
+
