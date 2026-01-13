@@ -58,9 +58,9 @@ class SkillContextManager:
             user_message=user_message,
             skill_prompt=skill_prompt,
             is_meta=True,
-            available_scripts=skill._scripts or [],
-            available_references=skill._references or [],
-            available_assets=skill._assets or [],
+            available_scripts=skill.scripts or [],
+            available_references=skill.references or [],
+            available_assets=skill.assets or [],
         )
 
         return context
@@ -83,8 +83,8 @@ class SkillContextManager:
             f"The {skill.name} skill is now active.",
         ]
 
-        if skill._scripts:
-            parts.append(f"Available scripts: {', '.join(skill._scripts)}")
+        if skill.scripts:
+            parts.append(f"Available scripts: {', '.join(skill.scripts)}")
 
         return " ".join(parts)
 
@@ -130,19 +130,19 @@ class SkillContextManager:
                     prompt_parts.append(f"- {tool_name}: (not available)\n")
 
         # Add resource references
-        if skill._scripts:
+        if skill.scripts:
             prompt_parts.append("\n## Available Scripts\n")
             prompt_parts.append("You can execute scripts in the scripts/ directory using the Bash tool.\n")
-            prompt_parts.append(f"Scripts: {', '.join(skill._scripts)}\n")
+            prompt_parts.append(f"Scripts: {', '.join(skill.scripts)}\n")
 
-        if skill._references:
+        if skill.references:
             prompt_parts.append("\n## Available References\n")
             prompt_parts.append("You can read reference files using the Read tool.\n")
-            prompt_parts.append(f"References: {', '.join(skill._references)}\n")
+            prompt_parts.append(f"References: {', '.join(skill.references)}\n")
 
-        if skill._assets:
+        if skill.assets:
             prompt_parts.append("\n## Available Assets\n")
-            prompt_parts.append(f"Assets: {', '.join(skill._assets)}\n")
+            prompt_parts.append(f"Assets: {', '.join(skill.assets)}\n")
 
         return "".join(prompt_parts)
 

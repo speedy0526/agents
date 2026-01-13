@@ -48,9 +48,24 @@ class Skill(BaseModel):
     assets_dir: Optional[str] = Field(default=None, description="Path to assets/ directory")
 
     # Resources (lazy loaded) - Private attributes in Pydantic V2
-    _scripts: Optional[List[str]] = PrivateAttr(None)
-    _references: Optional[List[str]] = PrivateAttr(None)
-    _assets: Optional[List[str]] = PrivateAttr(None)
+    _scripts: Optional[List[str]] = PrivateAttr(default=None)
+    _references: Optional[List[str]] = PrivateAttr(default=None)
+    _assets: Optional[List[str]] = PrivateAttr(default=None)
+
+    @property
+    def scripts(self) -> List[str]:
+        """Get available scripts"""
+        return self.__pydantic_private__.get('_scripts', [])
+
+    @property
+    def references(self) -> List[str]:
+        """Get available references"""
+        return self.__pydantic_private__.get('_references', [])
+
+    @property
+    def assets(self) -> List[str]:
+        """Get available assets"""
+        return self.__pydantic_private__.get('_assets', [])
 
 
 class SkillInvocation(BaseModel):

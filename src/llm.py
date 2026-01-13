@@ -22,11 +22,13 @@ class LLMClient:
         )
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+        print("\n" + "="*60)
         print(f"""
 Using model: {self.model}
 Using API key: {'set' if self.client.api_key else 'not set'}
 Using base URL: {self.client.base_url}
         """)
+        print("\n" + "="*60)
 
     async def chat(
         self,

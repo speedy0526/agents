@@ -204,9 +204,9 @@ When you need to use a skill, call this tool with the skill name as the 'command
                 "model": skill.model,
                 "disable_model_invocation": skill.disable_model_invocation,
                 "base_dir": skill.base_dir,
-                "has_scripts": bool(skill._scripts),
-                "has_references": bool(skill._references),
-                "has_assets": bool(skill._assets),
+                "has_scripts": bool(skill.scripts),
+                "has_references": bool(skill.references),
+                "has_assets": bool(skill.assets),
             }
             skills_info.append(info)
 

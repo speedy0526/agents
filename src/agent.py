@@ -67,11 +67,14 @@ class MinimalAgent:
         # Add tools (including skill as a tool)
         if self.tools:
             prompt_parts.append("\n## Available Tools\n")
-            tools_desc = "\n".join([
-                f"- {name}: {tool.description}"
-                for name, tool in self.tools.items()
-            ])
-            prompt_parts.append(tools_desc)
+            for name, tool in self.tools.items():
+                if name == "skill":
+                    # Special formatting for skill tool to emphasize it's the way to access skills
+                    prompt_parts.append(f"- {name}: {tool.description}")
+                    prompt_parts.append(f"  IMPORTANT: To use a skill, call the 'skill' tool with the skill name as the 'command' parameter.")
+                    prompt_parts.append(f"  Available skills: {', '.join(self.skill_manager.get_skill_names()) or 'None'}")
+                else:
+                    prompt_parts.append(f"- {name}: {tool.description}")
 
         # Add guidelines
         prompt_parts.append(f"""
@@ -79,17 +82,19 @@ class MinimalAgent:
 ## Guidelines
 
 1. Use tools to accomplish tasks efficiently.
-2. The 'skill' tool manages specialized workflows - use it for complex multi-step tasks.
-3. When you need to use a tool, respond with tool name and parameters.
-4. When task is complete, set next_action to 'finish' and provide a final answer.
-5. If a tool fails, try a different approach.
-6. Learn from errors - they are part of context for improvement.
-7. Use tools efficiently - avoid unnecessary calls.
-8. Keep user's goals in mind throughout the task.
+2. **CRITICAL**: Skills (like 'research', 'pdf') are NOT direct tools. You must call the 'skill' tool with command='skill-name' to use them.
+3. Example: To use the research skill, set next_action='use_tool', tool_name='skill', tool_parameters={{'command': 'research'}}
+4. When you need to use a regular tool, respond with tool name and parameters.
+5. When task is complete, set next_action to 'finish' and provide a final answer.
+6. If a tool fails, try a different approach.
+7. Learn from errors - they are part of context for improvement.
+8. Use tools efficiently - avoid unnecessary calls.
+9. Keep user's goals in mind throughout the task.
 
 ## Action Format
 
-- For tools: Set next_action='use_tool', specify tool_name and tool_parameters
+- For skills: Set next_action='use_tool', tool_name='skill', tool_parameters={{'command': 'skill-name'}}
+- For regular tools: Set next_action='use_tool', specify tool_name and tool_parameters
 - To finish: Set next_action='finish' and provide final answer
 """)
 
@@ -166,13 +171,14 @@ class MinimalAgent:
                 raise ValueError(error)
 
             # Inject skill context messages into conversation
-            for msg in context_messages:
-                if msg.get("meta"):
-                    # Hidden message (skill prompt)
-                    self.context.add_system_prompt(msg["content"])
-                else:
-                    # User-visible message
-                    self.context.add_assistant_response(msg["content"])
+            if context_messages:
+                for msg in context_messages:
+                    if msg.get("meta"):
+                        # Hidden message (skill prompt)
+                        self.context.add_system_prompt(msg["content"])
+                    else:
+                        # User-visible message
+                        self.context.add_assistant_response(msg["content"])
 
             # Return early - skill injection doesn't complete the tool call
             # The agent will continue in the enhanced context
