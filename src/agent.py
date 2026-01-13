@@ -142,7 +142,12 @@ class MinimalAgent:
                 raise ValueError("Skill tool requires 'command' parameter")
 
             # Get current user request from context
-            user_request = self.context.messages[-1].get("content", "") if self.context.messages else ""
+            # Use entries to get the last user message
+            user_entry = next(
+                (e for e in reversed(self.context.entries) if e.role == "user"),
+                None
+            )
+            user_request = user_entry.content if user_entry else ""
 
             # Invoke skill to get context messages
             context_messages, error = self.skill_manager.invoke(

@@ -13,3 +13,13 @@
 **Tool:** skill
 **Error:** 'ContextManager' object has no attribute 'messages'
 
+## Error - 2026-01-13T22:48:47.672294
+
+**Tool:** skill
+**Error:** 'ContextManager' object has no attribute 'messages'
+
+## Error - 2026-01-13T22:49:09.558539
+
+**Tool:** skill
+**Error:** 'ContextManager' object has no attribute 'messages'
+
