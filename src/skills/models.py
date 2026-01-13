@@ -3,7 +3,7 @@ Skills Data Models
 Define the structure for prompt-based skills
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from typing import Dict, Any, Optional, List, Literal
 
 
@@ -47,18 +47,10 @@ class Skill(BaseModel):
     references_dir: Optional[str] = Field(default=None, description="Path to references/ directory")
     assets_dir: Optional[str] = Field(default=None, description="Path to assets/ directory")
 
-    # Resources (lazy loaded)
-    _scripts: Optional[List[str]] = Field(default=None, description="List of available scripts")
-    _references: Optional[List[str]] = Field(default=None, description="List of available references")
-    _assets: Optional[List[str]] = Field(default=None, description="List of available assets")
-
-    class Config:
-        # Allow underscore-prefixed fields
-        fields = {
-            "_scripts": {"exclude": True},
-            "_references": {"exclude": True},
-            "_assets": {"exclude": True},
-        }
+    # Resources (lazy loaded) - Private attributes in Pydantic V2
+    _scripts: Optional[List[str]] = PrivateAttr(None)
+    _references: Optional[List[str]] = PrivateAttr(None)
+    _assets: Optional[List[str]] = PrivateAttr(None)
 
 
 class SkillInvocation(BaseModel):

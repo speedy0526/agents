@@ -13,7 +13,7 @@ A minimal AI agent with Model + Tools + Skills + Loop + Context Engineering, bas
 ## Installation
 
 ```bash
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 ## Configuration
@@ -28,7 +28,7 @@ cp .env.example .env
 ## Usage
 
 ```bash
-python -m src.main
+python3 -m src.main
 ```
 
 ## Project Structure
