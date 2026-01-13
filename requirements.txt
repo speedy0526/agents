@@ -1,0 +1,13 @@
+# Minimal Agent System Dependencies
+
+# LLM
+openai>=1.10.0
+
+# Search
+ddgs>=9.0.0
+
+# Pydantic
+pydantic>=2.5.0
+
+# Environment
+python-dotenv>=1.0.0
