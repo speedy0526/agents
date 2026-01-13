@@ -3,3 +3,13 @@
 **Tool:** research
 **Error:** Tool not found: research
 
+## Error - 2026-01-13T22:48:07.737334
+
+**Tool:** skill
+**Error:** 'ContextManager' object has no attribute 'messages'
+
+## Error - 2026-01-13T22:48:29.406203
+
+**Tool:** skill
+**Error:** 'ContextManager' object has no attribute 'messages'
+
