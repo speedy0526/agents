@@ -23,17 +23,14 @@ class SkillContextManager:
         pass
 
     def create_skill_context(
-        self,
-        skill: Skill,
-        user_request: str,
-        tools_available: Dict[str, Any]
+        self, skill: Skill, user_request: str, tools_available: Dict[str, Any]
     ) -> SkillContext:
         """
         Create context for skill invocation
 
         This context will be injected into the conversation as:
         1. User-visible message (meta information)
-        2. Hidden message (full skill prompt, is_meta: true)
+        2. Hidden message (full skill prompt)
 
         Args:
             skill: The skill being invoked
@@ -89,10 +86,7 @@ class SkillContextManager:
         return " ".join(parts)
 
     def _create_skill_prompt(
-        self,
-        skill: Skill,
-        user_request: str,
-        tools_available: Dict[str, Any]
+        self, skill: Skill, user_request: str, tools_available: Dict[str, Any]
     ) -> str:
         """
         Create full skill prompt for Claude
@@ -132,7 +126,9 @@ class SkillContextManager:
         # Add resource references
         if skill.scripts:
             prompt_parts.append("\n## Available Scripts\n")
-            prompt_parts.append("You can execute scripts in the scripts/ directory using the Bash tool.\n")
+            prompt_parts.append(
+                "You can execute scripts in the scripts/ directory using the Bash tool.\n"
+            )
             prompt_parts.append(f"Scripts: {', '.join(skill.scripts)}\n")
 
         if skill.references:
@@ -146,7 +142,9 @@ class SkillContextManager:
 
         return "".join(prompt_parts)
 
-    def load_reference_content(self, skill: Skill, reference_name: str) -> Optional[str]:
+    def load_reference_content(
+        self, skill: Skill, reference_name: str
+    ) -> Optional[str]:
         """
         Load content from a reference file
 
@@ -165,7 +163,7 @@ class SkillContextManager:
         ref_path = Path(skill.references_dir) / reference_name
 
         try:
-            with open(ref_path, 'r', encoding='utf-8') as f:
+            with open(ref_path, "r", encoding="utf-8") as f:
                 return f.read()
         except Exception:
             return None
@@ -194,9 +192,7 @@ class SkillContextManager:
         return None
 
     def filter_allowed_tools(
-        self,
-        skill: Skill,
-        tools_available: Dict[str, Any]
+        self, skill: Skill, tools_available: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Filter available tools based on skill's allowed_tools
@@ -222,17 +218,14 @@ class SkillContextManager:
         return filtered_tools
 
     def get_context_messages(
-        self,
-        skill: Skill,
-        user_request: str,
-        tools_available: Dict[str, Any]
+        self, skill: Skill, user_request: str, tools_available: Dict[str, Any]
     ) -> List[Dict[str, str]]:
         """
         Get messages to inject into the conversation
 
         Returns two messages:
         1. User-visible message (meta: false)
-        2. Hidden skill prompt (meta: true, is_meta: true)
+        2. Hidden skill prompt (meta: true)
 
         Args:
             skill: The skill
@@ -253,9 +246,8 @@ class SkillContextManager:
             {
                 "role": "user",
                 "content": context.skill_prompt,
-                "meta": True,
-                "is_meta": True,
-            }
+                "meta": True
+            },
         ]
 
         return messages

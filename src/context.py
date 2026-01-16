@@ -246,30 +246,44 @@ class ContextManager:
         Get messages for LLM (KV-cache optimized)
 
         Principles:
-        1. Stable system prompt (cacheable)
+        1. Stable system prompt (cacheable) - merged into single system message
         2. Recent context (attention window)
         3. Goals at the end (attention guidance)
+
+        Note: Some APIs (like Zhipu/BigModel) require only one system message
+        and user/assistant roles only.
         """
         messages = []
 
-        # System messages (stable prefix)
+        # Merge all system messages into one (to avoid multiple system messages which some APIs reject)
+        system_contents = []
         for entry in self.entries:
             if entry.entry_type == "system":
-                messages.append({"role": entry.role, "content": entry.content})
+                system_contents.append(entry.content)
+
+        # Add merged system message if any
+        if system_contents:
+            merged_system = "\n\n".join(system_contents)
+            messages.append({"role": "system", "content": merged_system})
+
+        # Add goals to system message if needed
+        if include_goals:
+            goals = self.get_goals()
+            if goals:
+                if messages:
+                    # Append to existing system message
+                    messages[0]["content"] += f"\n\n{goals}\n\nKeep these goals in mind."
+                else:
+                    # Create new system message with goals
+                    messages.append({
+                        "role": "system",
+                        "content": f"{goals}\n\nKeep these goals in mind."
+                    })
 
         # Recent messages (excluding system and thought)
         for entry in self.entries:
             if entry.entry_type != "system" and entry.entry_type != "thought":
                 messages.append({"role": entry.role, "content": entry.content})
-
-        # Add goals at the end (attention guidance)
-        if include_goals:
-            goals = self.get_goals()
-            if goals:
-                messages.append({
-                    "role": "system",
-                    "content": f"\n{goals}\n\nKeep these goals in mind."
-                })
 
         return messages
 

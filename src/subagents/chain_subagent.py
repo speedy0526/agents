@@ -28,7 +28,11 @@ class ChainSubAgent(SubAgent):
         """
         # 创建独立的ContextManager（不调用super().__init__）
         from ..context import ContextManager
-        self.context = ContextManager()
+        import uuid
+
+        # 使用唯一的 session_id 让每个 SubAgent 有独立的 session
+        session_id = f"chain_{uuid.uuid4().hex[:8]}"
+        self.context = ContextManager(auto_save=False, session_id=session_id)
         
         self.subagents = subagents or {}
     

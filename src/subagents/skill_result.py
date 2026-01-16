@@ -105,6 +105,11 @@ class SkillResult(BaseModel):
         default=None,
         description="额外信息（未来扩展）"
     )
+ 
+    execution_time: Optional[float] = Field(
+        default=None,
+        description="执行时间（秒）"
+    )
     
     # ========== 辅助方法 ==========
     def get_summary_or_confirmation(self) -> str:
