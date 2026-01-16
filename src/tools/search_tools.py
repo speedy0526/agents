@@ -3,6 +3,8 @@ Minimal Agent Tools - Search
 """
 
 from .base import BaseTool, ToolResult
+import requests
+from readability import Document
 
 
 class SearchGoogleTool(BaseTool):
@@ -21,16 +23,13 @@ class SearchGoogleTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query"
-                },
+                "query": {"type": "string", "description": "Search query"},
                 "max_results": {
                     "type": "number",
-                    "description": "Max results (default: 10)"
-                }
+                    "description": "Max results (default: 10)",
+                },
             },
-            "required": ["query"]
+            "required": ["query"],
         }
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -46,16 +45,37 @@ class SearchGoogleTool(BaseTool):
 
             with DDGS() as ddgs:
                 results = []
+                print(f"\n{'=' * 60}")
                 for r in ddgs.text(query, max_results=max_results):
-                    results.append({
-                        "title": r.get("title", ""),
-                        "url": r.get("href", ""),
-                        "snippet": r.get("body", "")
-                    })
+                    try:
+                        response = requests.get(
+                            r.get("href", ""),
+                            headers={
+                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                                "Accept-Language": "en-US,en;q=0.9",
+                                "Accept-Encoding": "gzip, deflate, br",
+                            },
+                        )
+                        doc = Document(response.text)
+                        html_content = doc.summary(html_partial=False)
+                        print(
+                            "\nurl:", r.get("href", ""), "html_content:", html_content
+                        )
+                    except Exception as e:
+                        html_content = str(e)
+
+                    results.append(
+                        {
+                            "title": r.get("title", ""),
+                            "url": r.get("href", ""),
+                            "snippet": r.get("body", ""),
+                            "content": html_content,
+                        }
+                    )
 
                 return self.success(
                     {"query": query, "results": results},
-                    f"Found {len(results)} results"
+                    f"Found {len(results)} results",
                 )
 
         except Exception as e:

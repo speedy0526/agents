@@ -42,24 +42,11 @@ async def main():
         print(f"  • {skill_name}: {skill.description}")
         print(f"    Required tools: {', '.join(skill.allowed_tools) or 'None'}")
 
-    
-    # Example 4: Test SubAgent skill execution
-    print("\n" + "="*60)
-    print("Test 4: SubAgent Skill Execution")
-    print("="*60)
-    print("Demonstrating how Agent uses SubAgent to execute skills...")
-    print("\nThe agent will:")
-    print("1. Recognize the need for research")
-    print("2. Decide to use the 'skill' SubAgent with command='research'")
-    print("3. Create SkillSubAgent with independent context")
-    print("4. SkillSubAgent loads research skill prompt to its own context")
-    print("5. SkillSubAgent executes in isolation")
-    print("6. Agent receives result summary, context remains clean")
-
     result = await agent.run(
-        "Search for information about 'minimal agent architecture' and compile a report",
-        max_steps=10
+        "Perform structured decision research about 'digit product 2.0' and compile a report",
+        max_steps=50
     )
+
     print(f"\nResult: {result}")
 
     # Clear context for next example

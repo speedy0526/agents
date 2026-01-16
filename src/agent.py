@@ -11,29 +11,28 @@ from pydantic import BaseModel, Field
 from .llm import LLMClient
 from .context import ContextManager
 from .skills import SkillManager
-from .subagents import ( 
-    SubAgentResult, 
-    ToolSubAgent,
-    SkillSubAgent,
-    ChainSubAgent
-)
- 
+from .subagents import SubAgentResult, ToolSubAgent, SkillSubAgent, ChainSubAgent
+
 
 class Thought(BaseModel):
     """Agent thought"""
+
     reasoning: str = Field(description="Current reasoning")
     next_action: str = Field(
         description="Next action: 'use_tool', 'use_skill', 'call_chain', 'think', 'respond_to_user', 'finish'"
     )
-    tool_name: Optional[str] = Field(default=None, description="Tool to use (for use_tool)")
-    tool_parameters: Optional[Dict[str, Any]] = Field(default=None, description="Tool parameters (for use_tool)")
+    tool_name: Optional[str] = Field(
+        default=None, description="Tool to use (for use_tool)"
+    )
+    tool_parameters: Optional[Dict[str, Any]] = Field(
+        default=None, description="Tool parameters (for use_tool)"
+    )
     subagent_type: Optional[str] = Field(
         default=None,
-        description="SubAgent type: 'tool', 'skill', 'chain' (for use_skill/call_chain)"
+        description="SubAgent type: 'tool', 'skill', 'chain' (for use_skill/call_chain)",
     )
     subagent_command: Optional[str] = Field(
-        default=None,
-        description="SubAgent command/skill name/chain definition"
+        default=None, description="SubAgent command/skill name/chain definition"
     )
 
 
@@ -52,7 +51,7 @@ class MinimalAgent:
         self,
         tools: List[Any],
         skills_dirs: Optional[List[str]] = None,
-        workspace_dir: str = "workspace"
+        workspace_dir: str = "workspace",
     ):
         self.llm = LLMClient()
         self.workspace_dir = workspace_dir
@@ -64,7 +63,9 @@ class MinimalAgent:
         self.skill_manager = SkillManager(skills_dirs=skills_dirs)
 
         # Initialize context manager (don't add system prompt yet - will be added in run())
-        self.context = ContextManager(max_context_length=20000, workspace_dir=workspace_dir)
+        self.context = ContextManager(
+            max_context_length=20000, workspace_dir=workspace_dir
+        )
 
     def get_system_prompt(self) -> str:
         """
@@ -85,8 +86,12 @@ class MinimalAgent:
 
         # Add SubAgent capabilities
         prompt_parts.append(f"\n## Available SubAgents\n")
-        prompt_parts.append(f"- skill: Execute specialized skills (research, pdf, etc.)")
-        prompt_parts.append(f"  Available skills: {', '.join(self.skill_manager.get_skill_names()) or 'None'}")
+        prompt_parts.append(
+            f"- skill: Execute specialized skills (research, pdf, etc.)"
+        )
+        prompt_parts.append(
+            f"  Available skills: {', '.join(self.skill_manager.get_skill_names()) or 'None'}"
+        )
         prompt_parts.append(f"- chain: Execute multiple steps in sequence")
 
         # Add guidelines
@@ -134,8 +139,8 @@ class MinimalAgent:
                 "function": {
                     "name": name,
                     "description": tool.description,
-                    "parameters": tool.parameters
-                }
+                    "parameters": tool.parameters,
+                },
             }
             for name, tool in self.tools.items()
         ]
@@ -150,7 +155,7 @@ class MinimalAgent:
         - No filtering needed - SubAgent context is separate
         """
         messages = self.context.get_messages(include_goals=True)
-        
+
         # Build meta instruction for Thought generation
         meta_instruction = """<OUTPUT_FORMAT>
 You must respond with JSON using ONLY these fields:
@@ -179,32 +184,32 @@ Examples:
 - To use a skill: {"reasoning": "I need to research", "next_action": "use_skill", "subagent_type": "skill", "subagent_command": "research"}
 - To finish: {"reasoning": "Task complete", "next_action": "finish"}
 </OUTPUT_FORMAT>"""
-        
+
         # Insert meta instruction at the beginning (highest priority)
         messages_with_instruction = [
             {"role": "system", "content": meta_instruction},
-            *messages
+            *messages,
         ]
-        
+
         # Use streaming for better user experience
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("🤔 Agent Thinking...")
-        print(f"{'='*60}\n")
-        
+        print(f"{'=' * 60}\n")
+
         response = await self.llm.chat(messages_with_instruction, stream=True)
-        
+
         # Extract JSON from streaming response
         content = response["choices"][0]["message"]["content"]
         json_text = self.llm._extract_json(content)
         parsed = json.loads(json_text)
         parsed = self.llm._ensure_object(parsed)
-        
+
         return Thought.model_validate(parsed)
 
     async def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Any:  # noqa: ANN401
         """
         Execute tool and log to context
-        
+
         Note: Skills are now handled by execute_subagent, not here.
         This method only handles direct tool execution.
         """
@@ -219,7 +224,7 @@ Examples:
         self.context.add_tool_result(
             tool_name=tool_name,
             result=result.summary if result.status == "success" else result.error,
-            is_error=result.status != "success"
+            is_error=result.status != "success",
         )
 
         return result
@@ -249,12 +254,12 @@ Examples:
             subagent = SkillSubAgent(
                 agent_context_snapshot=context_snapshot,
                 skill_manager=self.skill_manager,
-                skill_name=thought.subagent_command
+                skill_name=thought.subagent_command,
             )
             command = thought.subagent_command
             parameters = {
-                'tools_available': self.tools,  # 传递可用工具
-                'user_request': context_snapshot.get('user_request', '')
+                "tools_available": self.tools,  # 传递可用工具
+                "user_request": context_snapshot.get("user_request", ""),
             }
 
         elif thought.next_action == "call_chain":
@@ -268,43 +273,42 @@ Examples:
             return None
 
         # Execute SubAgent
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"🚀 Agent: Executing SubAgent")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"   Type: {thought.next_action}")
         print(f"   Command: {command}")
-        print(f"{'='*60}\n")
-        
-        result = await subagent.execute(
-            command=command,
-            parameters=parameters
-        )
+        print(f"{'=' * 60}\n")
+
+        result = await subagent.execute(command=command, parameters=parameters)
 
         # Add result summary to Agent context (不包含SubAgent内部细节）
         if result.success:
             # Format SkillResult if applicable
-            if hasattr(result.result, 'summary'):
+            if hasattr(result.result, "summary"):
                 formatted = result.summary
-            elif hasattr(result.result, 'get_summary_or_confirmation'):
+            elif hasattr(result.result, "get_summary_or_confirmation"):
                 # SkillResult
                 skill_result = result.result
                 formatted = skill_result.get_summary_or_confirmation()
-                
+
                 # Add file info if available
                 if file_info := skill_result.get_file_info():
                     formatted += f"\nFile: {file_info}"
-                
+
                 # Add data info
                 if skill_result.has_data():
                     if skill_result.items:
                         formatted += f"\nFound {len(skill_result.items)} items"
                     if skill_result.insights:
-                        formatted += f"\nKey Insights: {'; '.join(skill_result.insights[:3])}"
+                        formatted += (
+                            f"\nKey Insights: {'; '.join(skill_result.insights[:3])}"
+                        )
             else:
                 formatted = result.summary or "SubAgent executed successfully"
 
             self.context.add_assistant_response(formatted)
-            
+
             # 检查任务是否完成，如果是则添加系统消息促使Agent结束
             if self._is_task_complete(result):
                 self.context.add_system_prompt("""
@@ -321,11 +325,17 @@ If the task needs more work:
 - Continue with next_action='use_tool' or 'use_skill'
 - Explain what still needs to be done
 """)
-            
+
             # Update shared memory with SubAgent metadata（只保留关键信息）
             if result.metadata:
                 for key, value in result.metadata.items():
-                    if key not in ["subagent_type", "skill_name", "tool_name", "command", "parameters"]:
+                    if key not in [
+                        "subagent_type",
+                        "skill_name",
+                        "tool_name",
+                        "command",
+                        "parameters",
+                    ]:
                         self.context.update_shared_memory(f"subagent_{key}", value)
         else:
             # Log error
@@ -336,7 +346,7 @@ If the task needs more work:
     def _is_task_complete(self, subagent_result: SubAgentResult) -> bool:
         """
         检查任务是否完成
-        
+
         判断标准：
         - SkillResult 有 file_path（保存了文件）
         - SkillResult 有实际数据结果
@@ -344,27 +354,30 @@ If the task needs more work:
         """
         if not subagent_result.success:
             return False
-        
+
         result = subagent_result.result
         has_tangible_results = False
-        
+
         # Check if result is SkillResult
-        if hasattr(result, 'file_path') and result.file_path:
+        if hasattr(result, "file_path") and result.file_path:
             has_tangible_results = True
-        
-        if hasattr(result, 'file_paths') and result.file_paths:
+
+        if hasattr(result, "file_paths") and result.file_paths:
             has_tangible_results = True
-        
-        if hasattr(result, 'has_data') and result.has_data():
+
+        if hasattr(result, "has_data") and result.has_data():
             has_tangible_results = True
-        
-        if hasattr(result, 'confirmation') and 'complete' in str(result.confirmation).lower():
+
+        if (
+            hasattr(result, "confirmation")
+            and "complete" in str(result.confirmation).lower()
+        ):
             has_tangible_results = True
-        
+
         # Update shared memory flag
         if has_tangible_results:
-            self.context.update_shared_memory('has_tangible_results', True)
-        
+            self.context.update_shared_memory("has_tangible_results", True)
+
         return has_tangible_results
 
     async def run(self, user_request: str, max_steps: int = 10) -> str:
@@ -379,10 +392,10 @@ If the task needs more work:
         """
         # Generate unique session ID for this run
         session_id = uuid.uuid4().hex[:8]  # Short unique ID
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Starting new session: {session_id}")
         print(f"Task: {user_request}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # Create new context manager for this session
         self.context = ContextManager(
@@ -390,9 +403,9 @@ If the task needs more work:
             workspace_dir=self.workspace_dir,
             auto_save=True,
             min_save_interval=0.5,
-            session_id=session_id
+            session_id=session_id,
         )
-        
+
         # Add system prompt to new context
         self.context.add_system_prompt(self.get_system_prompt())
         self.context.save()
@@ -404,7 +417,9 @@ If the task needs more work:
         self.context.set_goals([f"Complete: {user_request}"])
 
         print(f"Tools: {len(self.tools)} (including skill manager)")
-        print(f"Available skills: {', '.join(self.skill_manager.get_skill_names()) or 'None'}")
+        print(
+            f"Available skills: {', '.join(self.skill_manager.get_skill_names()) or 'None'}"
+        )
         print(self.context.get_summary())
 
         for step in range(max_steps):
@@ -416,10 +431,10 @@ If the task needs more work:
             self.context.add_thought(thought.reasoning)
 
             print(f"\n[Step {step + 1}] Thought: {thought.reasoning}")
-            
+
             # Safety check: if too many steps without tangible results, prompt Agent to finish
-            if step >= 5 and not self.context.shared_memory.get('has_tangible_results'):
-                self.context.add_system_prompt("""
+            if step >= 5 and not self.context.shared_memory.get("has_tangible_results"):
+                self.context.add_system_prompt(f"""
 ### Progress Check
 
 You have taken {step + 1} steps but haven't produced tangible results yet.
@@ -429,7 +444,7 @@ Consider if you should:
 3. Respond to user asking for clarification
 
 Remember: Activating a skill or tool is not the same as completing the task.
-""".format(step=step))
+""")
 
             # Check if finished
             if thought.next_action == "finish":
@@ -449,19 +464,21 @@ Remember: Activating a skill or tool is not the same as completing the task.
             # Execute SubAgent
             try:
                 subagent_result = await self.execute_subagent(thought)
-                
+
                 if subagent_result is None:
                     # Not a SubAgent action
                     print("  Not a SubAgent action, skipping...")
                     continue
-                
+
                 # Log SubAgent execution
                 print(f"  SubAgent: {thought.next_action}")
                 print(f"  Result: {subagent_result.summary}")
-                
+
             except Exception as e:
                 # Log error to context (Manus: preserve errors)
-                self.context.add_assistant_response(f"SubAgent execution error: {str(e)}")
+                self.context.add_assistant_response(
+                    f"SubAgent execution error: {str(e)}"
+                )
                 print(f"  SubAgent failed: {thought.next_action}")
                 print(f"  Error: {e}")
 

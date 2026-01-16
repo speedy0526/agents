@@ -15,37 +15,34 @@ class FileReadTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Read content from a file"
+        return "Read content from a file,file_path is the path to read the file, containing directory and filename"
 
     @property
     def parameters(self) -> dict:
         return {
             "type": "object",
             "properties": {
-                "filepath": {
-                    "type": "string",
-                    "description": "Path to the file"
-                }
+                "file_path": {"type": "string", "description": "Path to read the file, containing directory and filename"}
             },
-            "required": ["filepath"]
+            "required": ["file_path"],
         }
 
     async def execute(self, **kwargs) -> ToolResult:
         """Execute file read"""
         try:
-            filepath = kwargs.get("filepath", "")
-            if not filepath:
-                return self.error("Missing filepath", "Filepath required")
+            file_path = kwargs.get("file_path", "")
+            if not file_path:
+                return self.error("Missing file_path", "file_path required")
 
-            path = Path(filepath)
+            path = Path(file_path)
             if not path.exists():
-                return self.error("File not found", f"File not found: {filepath}")
+                return self.error("File not found", f"File not found: {file_path}")
 
             content = path.read_text(encoding="utf-8")
 
             return self.success(
-                {"filepath": filepath, "content": content},
-                f"Read {len(content)} characters from {filepath}"
+                {"file_path": file_path, "content": content},
+                f"Read {len(content)} characters from {file_path}",
             )
 
         except Exception as e:
@@ -61,49 +58,43 @@ class FileWriteTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Write content to a file"
+        return "Write content to a file,file_path is required, file_path is the path to write the file, containing directory and filename"
 
     @property
     def parameters(self) -> dict:
         return {
             "type": "object",
             "properties": {
-                "filepath": {
-                    "type": "string",
-                    "description": "Path to the file"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Content to write"
-                }
+                "file_path": {"type": "string", "description": "Path to write the file, containing directory and filename"},
+                "content": {"type": "string", "description": "Content to write"},
             },
-            "required": ["filepath", "content"]
+            "required": ["file_path", "content"],
         }
 
     async def execute(self, **kwargs) -> ToolResult:
         """Execute file write"""
         try:
-            filepath = kwargs.get("filepath", "")
+            file_path = kwargs.get("file_path", "")
             content = kwargs.get("content", "")
 
-            if not filepath:
-                return self.error("Missing filepath", "Filepath required")
+            if not file_path:
+                return self.error("Missing file_path", "file_path required")
 
-            path = Path(filepath)
+            path = Path(file_path)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
 
             # Print save location and success message
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"✓ File saved successfully")
             print(f"  Directory: {path.parent.absolute()}")
             print(f"  Filename: {path.name}")
             print(f"  Size: {len(content)} characters")
-            print(f"{'='*60}\n")
+            print(f"{'=' * 60}\n")
 
             return self.success(
-                {"filepath": str(path.absolute()), "size": len(content)},
-                f"Wrote {len(content)} characters to {filepath}"
+                {"file_path": str(path.absolute()), "size": len(content)},
+                f"Wrote {len(content)} characters to {file_path}",
             )
 
         except Exception as e:
