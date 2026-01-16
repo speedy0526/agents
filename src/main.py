@@ -43,7 +43,7 @@ async def main():
         print(f"    Required tools: {', '.join(skill.allowed_tools) or 'None'}")
 
     result = await agent.run(
-        "Perform structured decision research about 'digit product 2.0' and compile a report",
+        "规划一个关于 'digit product 2.0' 的 培训课程",
         max_steps=50
     )
 

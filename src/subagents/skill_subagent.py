@@ -147,7 +147,6 @@ class SkillSubAgent(SubAgent):
 
                 # Use streaming for skill LLM calls
                 print("\n💭 Skill AI Thinking...")
-                print("\n", messages)
                 response = await llm.chat(messages=messages, stream=True)
                 response_text = response["choices"][0]["message"]["content"]
                 if not response_text:

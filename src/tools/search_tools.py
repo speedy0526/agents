@@ -57,10 +57,7 @@ class SearchGoogleTool(BaseTool):
                             },
                         )
                         doc = Document(response.text)
-                        html_content = doc.summary(html_partial=False)
-                        print(
-                            "\nurl:", r.get("href", ""), "html_content:", html_content
-                        )
+                        html_content = doc.summary()
                     except Exception as e:
                         html_content = str(e)
 
