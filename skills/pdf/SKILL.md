@@ -23,7 +23,7 @@ Use this skill when the user asks you to:
 - Fill out PDF forms
 - Analyze PDF content
 
-## Workflow
+## <WORKFLOW> PDF Processing Workflow
 
 ### Step 1: Understand the Request
 
@@ -83,7 +83,7 @@ Use the `Write` tool to save the output:
 - Split PDFs → Multiple .pdf files
 - Filled form → .pdf
 
-## Best Practices
+## <BEST_PRACTICES> PDF Processing Guidelines
 
 1. **File Organization**: Use clear, descriptive filenames
 2. **Backup Originals**: Never overwrite the original PDF
@@ -91,7 +91,7 @@ Use the `Write` tool to save the output:
 4. **Error Handling**: Handle corrupted or password-protected PDFs gracefully
 5. **Progress Updates**: Inform the user about progress during long operations
 
-## Error Handling
+## <ERROR_HANDLING> What to Do If...
 
 - **PDF is password protected**: Ask user for password
 - **PDF is corrupted**: Attempt recovery or inform user
@@ -160,15 +160,6 @@ Created files:
 ...
 - report_chapter10.pdf (pages 87-95)
 ```
-
-## Output Format
-
-Your final response should include:
-
-1. **Confirmation**: Operation completed successfully
-2. **Summary**: What was done (e.g., "Extracted 15 pages of text")
-3. **File Details**: Output filename, page count, file size
-4. **Preview**: Brief preview of the result (first 100-200 characters)
 
 ## Tips for PDF Processing
 

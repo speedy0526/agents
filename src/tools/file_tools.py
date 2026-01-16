@@ -93,8 +93,16 @@ class FileWriteTool(BaseTool):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
 
+            # Print save location and success message
+            print(f"\n{'='*60}")
+            print(f"✓ File saved successfully")
+            print(f"  Directory: {path.parent.absolute()}")
+            print(f"  Filename: {path.name}")
+            print(f"  Size: {len(content)} characters")
+            print(f"{'='*60}\n")
+
             return self.success(
-                {"filepath": filepath, "size": len(content)},
+                {"filepath": str(path.absolute()), "size": len(content)},
                 f"Wrote {len(content)} characters to {filepath}"
             )
 

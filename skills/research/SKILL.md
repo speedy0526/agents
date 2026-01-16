@@ -21,7 +21,7 @@ Use this skill when the user asks you to:
 - Compile a report from web sources
 - Save research results to a file
 
-## Workflow
+## <WORKFLOW> Research Workflow
 
 Follow this step-by-step process:
 
@@ -89,7 +89,7 @@ Use the `file_write` tool to save the report.
 - Ensure proper markdown formatting
 - Verify the file is saved successfully
 
-## Best Practices
+## <BEST_PRACTICES> Research Guidelines
 
 1. **Focus on quality over quantity**: 5-10 well-analyzed results are better than 50 unexamined ones
 2. **Cite sources properly**: Always include URLs for verification
@@ -97,7 +97,7 @@ Use the `file_write` tool to save the report.
 4. **Highlight uncertainty**: If information is uncertain or conflicting, note it
 5. **Use clear formatting**: Make the report easy to scan and read
 
-## Error Handling
+## <ERROR_HANDLING> What to Do If...
 
 - If search returns no results, try alternative keywords
 - If results are low quality, search with different terms
@@ -126,32 +126,6 @@ Use the `file_write` tool to save the report.
 3. Compile statistics and expert opinions
 4. Note contradictions between studies
 5. Save to: `remote_work_productivity.md`
-
-## Output Format
-
-Your final response should include:
-
-1. **Confirmation**: "Research complete. Findings saved to [filename]"
-2. **Summary**: Brief overview of what was found (2-3 sentences)
-3. **Key insights**: 2-3 most important findings
-4. **File details**: Filename and word count
-
-Example:
-```
-Research complete. Findings saved to ai_trends_2024.md
-
-Summary: I researched AI trends in 2024 and found that generative AI continues to dominate, with major developments in multimodal models and enterprise adoption. Most experts predict AI will become more integrated into daily workflows.
-
-Key Insights:
-- Generative AI is evolving from text-only to multimodal capabilities
-- Enterprise adoption is accelerating, driven by ROI demonstrations
-- AI regulation is emerging as a major theme
-
-File Details:
-- Filename: ai_trends_2024.md
-- Word count: 1,234
-- Sources: 8
-```
 
 ## Tips for Effective Research
 

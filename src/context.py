@@ -34,12 +34,29 @@ class ContextManager:
     def __init__(
         self,
         max_context_length: int = 8000,
-        workspace_dir: str = "workspace"
+        workspace_dir: str = "workspace",
+        auto_save: bool = True,
+        min_save_interval: float = 0.5,
+        session_id: Optional[str] = None
     ):
         self.entries: List[ContextEntry] = []
         self.max_context_length = max_context_length
-        self.workspace_dir = Path(workspace_dir)
-        self.workspace_dir.mkdir(exist_ok=True)
+        self.auto_save = auto_save
+        self.min_save_interval = min_save_interval
+        self._dirty = False
+        self._last_save_time = 0.0
+        self.session_id = session_id
+        
+        # Shared memory for SubAgent communication
+        self.shared_memory: Dict[str, Any] = {}
+
+        # Determine workspace directory based on session_id
+        base_workspace_dir = Path(workspace_dir)
+        if session_id:
+            self.workspace_dir = base_workspace_dir / f"session_{session_id}"
+        else:
+            self.workspace_dir = base_workspace_dir
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
         # External memory files
         self.session_file = self.workspace_dir / "session_context.json"
@@ -62,13 +79,34 @@ class ContextManager:
             except Exception as e:
                 print(f"✗ Failed to load session: {e}")
 
-    def _save_session(self):
-        """Save session to external memory"""
+    def _save_session(self, force: bool = False):
+        """Save session to external memory
+        
+        Args:
+            force: If True, save immediately regardless of interval.
+                   If False, respect min_save_interval.
+        """
+        import time
+        current_time = time.time()
+        
+        # Check if we should skip save (not forced and within interval)
+        if not force and self._last_save_time > 0:
+            elapsed = current_time - self._last_save_time
+            if elapsed < self.min_save_interval:
+                # Skip save, but keep dirty flag
+                return
+        
         data = {
             "entries": [entry.model_dump() for entry in self.entries],
             "updated_at": datetime.now().isoformat()
         }
         self.session_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        self._dirty = False
+        self._last_save_time = current_time
+
+    def save(self):
+        """Force save session to external memory"""
+        self._save_session(force=True)
 
     def add_system_prompt(self, content: str):
         """Add stable system prompt (KV-cache friendly)"""
@@ -78,6 +116,9 @@ class ContextManager:
             entry_type="system"
         )
         self.entries.insert(0, entry)  # System prompt always first
+        self._dirty = True
+        if self.auto_save:
+            self._save_session()
 
     def add_user_request(self, content: str):
         """Add user request"""
@@ -87,7 +128,9 @@ class ContextManager:
             entry_type="message"
         )
         self.entries.append(entry)
-        self._save_session()
+        self._dirty = True
+        if self.auto_save:
+            self._save_session()
 
     def add_assistant_response(self, content: str):
         """Add assistant response"""
@@ -97,7 +140,9 @@ class ContextManager:
             entry_type="message"
         )
         self.entries.append(entry)
-        self._save_session()
+        self._dirty = True
+        if self.auto_save:
+            self._save_session()
 
     def add_tool_result(self, tool_name: str, result: str, is_error: bool = False):
         """Add tool result (preserve errors for learning)"""
@@ -110,11 +155,12 @@ class ContextManager:
             metadata={"tool_name": tool_name, "is_error": is_error}
         )
         self.entries.append(entry)
+        self._dirty = True
 
         # Also save to errors file for learning
         if is_error:
             self._log_error(tool_name, result)
-        else:
+        elif self.auto_save:
             self._save_session()
 
     def add_thought(self, reasoning: str):
@@ -125,7 +171,9 @@ class ContextManager:
             entry_type="thought"
         )
         self.entries.append(entry)
-        self._save_session()
+        self._dirty = True
+        if self.auto_save:
+            self._save_session()
 
     def _log_error(self, tool_name: str, error_msg: str):
         """Log error to external memory for learning"""
@@ -169,7 +217,7 @@ class ContextManager:
         system_entries = [e for e in self.entries if e.entry_type == "system"]
 
         # Keep last N entries (recent attention window)
-        recent_count = 10
+        recent_count = 20
         recent_entries = self.entries[-recent_count:] if len(self.entries) > recent_count else []
 
         # Archive old entries to file
@@ -186,7 +234,7 @@ class ContextManager:
 
         # Update context (append-only, no modification)
         self.entries = system_entries + recent_entries
-        self._save_session()
+        self.save()
 
     def _needs_compression(self) -> bool:
         """Check if context needs compression"""
@@ -209,9 +257,9 @@ class ContextManager:
             if entry.entry_type == "system":
                 messages.append({"role": entry.role, "content": entry.content})
 
-        # Recent messages (excluding system)
+        # Recent messages (excluding system and thought)
         for entry in self.entries:
-            if entry.entry_type != "system":
+            if entry.entry_type != "system" and entry.entry_type != "thought":
                 messages.append({"role": entry.role, "content": entry.content})
 
         # Add goals at the end (attention guidance)
@@ -241,5 +289,62 @@ Context Summary:
         """Clear context (keep system prompt)"""
         system_entries = [e for e in self.entries if e.entry_type == "system"]
         self.entries = system_entries
-        self._save_session()
+        self.save()
         print("✓ Context cleared (system prompt preserved)")
+
+    def cleanup_old_archives(self, days_to_keep: int = 7):
+        """
+        Delete archive files older than specified days.
+        
+        Args:
+            days_to_keep: Number of days to keep archive files (default: 7)
+        """
+        import time
+        cutoff_time = time.time() - (days_to_keep * 86400)
+        archive_files = list(self.workspace_dir.glob("archive_*.json"))
+        deleted_count = 0
+        
+        for archive_file in archive_files:
+            try:
+                if archive_file.stat().st_mtime < cutoff_time:
+                    archive_file.unlink()
+                    deleted_count += 1
+            except Exception as e:
+                print(f"✗ Failed to delete {archive_file.name}: {e}")
+        
+        if deleted_count > 0:
+            print(f"✓ Cleaned up {deleted_count} old archive files")
+        else:
+            print("✓ No old archive files to clean up")
+    
+    # ========== Shared Memory Methods ==========
+    
+    def update_shared_memory(self, key: str, value: Any):
+        """更新共享内存（用于SubAgent间通信）"""
+        self.shared_memory[key] = value
+        print(f"✓ Updated shared_memory: {key}")
+    
+    def get_shared_memory(self, key: str, default: Any = None) -> Any:
+        """获取共享内存中的值"""
+        return self.shared_memory.get(key, default)
+    
+    def get_snapshot(self) -> Dict[str, Any]:
+        """获取Context快照（供SubAgent使用）"""
+        # 获取用户请求（最后一条user消息）
+        user_request = ""
+        for entry in reversed(self.entries):
+            if entry.role == "user" and entry.entry_type == "message":
+                user_request = entry.content
+                break
+        
+        return {
+            "goals": self.get_goals(),
+            "recent_entries": self.entries[-10:] if len(self.entries) > 10 else self.entries,
+            "shared_memory": self.shared_memory.copy(),
+            "user_request": user_request
+        }
+    
+    def clear_shared_memory(self):
+        """清空共享内存"""
+        self.shared_memory.clear()
+        print("✓ Shared memory cleared")

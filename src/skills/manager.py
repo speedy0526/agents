@@ -13,6 +13,7 @@ from pathlib import Path
 from .models import Skill, SkillRegistry, SkillInvocation
 from .loader import SkillLoader
 from .context import SkillContextManager
+from ..subagents.skill_result import SkillResult
 
 
 class SkillManager:
@@ -186,6 +187,32 @@ When you need to use a skill, call this tool with the skill name as the 'command
         )
 
         return context_messages, None
+
+    async def execute_skill(self, command: str, parameters: Dict[str, Any]) -> SkillResult:
+        """
+        Execute a skill and return SkillResult
+        
+        This method is called by SkillSubAgent to execute skills directly.
+        
+        Args:
+            command: Skill name to execute
+            parameters: Skill parameters
+            
+        Returns:
+            SkillResult with execution results
+        """
+        # For now, just return a success confirmation
+        # TODO: Implement actual skill execution logic
+        return SkillResult(
+            success=True,
+            confirmation=f"Skill '{command}' activated successfully",
+            summary=f"Skill '{command}' is now active. Use the allowed tools to complete the task.",
+            metadata={
+                "skill_name": command,
+                "parameters": parameters,
+                "execution_mode": "direct"
+            }
+        )
 
     def get_all_skills_info(self) -> List[Dict[str, Any]]:
         """
