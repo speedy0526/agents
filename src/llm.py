@@ -132,7 +132,7 @@ class LLMClient:
                 return response
         except Exception as e:
             duration = time.time() - start
-            self.logger.error(f"Chat failed: {duration:.2f}s, error: {e}")
+            self.logger.error(f"Chat failed: {messages} {duration:.2f}s, error: {e}")
             raise
 
     async def _stream_chat(

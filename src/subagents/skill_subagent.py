@@ -41,6 +41,7 @@ class SkillSubAgent(SubAgent):
 
         # 使用唯一的 session_id 避免 session 文件冲突
         import uuid
+
         session_id = f"skill_{self.skill_name}_{uuid.uuid4().hex[:8]}"
 
         self.context = ContextManager(auto_save=False, session_id=session_id)
@@ -85,7 +86,9 @@ class SkillSubAgent(SubAgent):
         from ..skills.context import SkillContextManager
 
         skill_context_manager = SkillContextManager()
-        filtered_tools = skill_context_manager.filter_allowed_tools(skill, tools_available)
+        filtered_tools = skill_context_manager.filter_allowed_tools(
+            skill, tools_available
+        )
 
         # Validate required tools
         missing_tools = set(skill.allowed_tools) - set(filtered_tools.keys())
@@ -170,9 +173,8 @@ class SkillSubAgent(SubAgent):
                     tool_calls.extend(tool_calls_made)
                     # Check if we produced tangible results (files, data)
                     for call in tool_calls_made:
-                        if (
-                            call.get("tool_name") == "file_write"
-                            and call.get("success")
+                        if call.get("tool_name") == "file_write" and call.get(
+                            "success"
                         ):
                             files_saved.append(
                                 call.get("result", {}).get("filepath", "")
@@ -264,7 +266,8 @@ class SkillSubAgent(SubAgent):
                     # Hidden skill prompt - add as system prompt
                     self.context.add_system_prompt(msg["content"])
                 # Skip user-visible messages (meta: false) - they're just for display
-
+                else:
+                    self.context.add_user_request(msg["content"])
         # Add task completion guidance
         task_completion = """
 ## Task Completion
