@@ -5,6 +5,7 @@ Core Agent with Model + Tools + Loop + Context Engineering + Skills
 
 import os
 import uuid
+import json
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 from .llm import LLMClient
@@ -106,6 +107,15 @@ class MinimalAgent:
 8. Use resources efficiently - avoid unnecessary calls.
 9. Keep user's goals in mind throughout the task.
 
+## Task Completion Rules
+
+**IMPORTANT**: Only set next_action='finish' when you have ACTUALLY COMPLETED the user's request:
+- If user asked for research: You must have performed searches and gathered findings
+- If user asked to save a file: You must have saved the file with actual content
+- If user asked for information: You must have retrieved and presented the information
+- Simply activating a skill or tool does NOT mean the task is complete
+- You must verify that tangible results have been produced before finishing
+
 ## Action Format
 
 - For skills: Set next_action='use_skill', subagent_type='skill', subagent_command='skill-name'
@@ -176,8 +186,20 @@ Examples:
             *messages
         ]
         
-        response = await self.llm.generate_structured(messages_with_instruction, Thought)
-        return response
+        # Use streaming for better user experience
+        print(f"\n{'='*60}")
+        print("🤔 Agent Thinking...")
+        print(f"{'='*60}\n")
+        
+        response = await self.llm.chat(messages_with_instruction, stream=True)
+        
+        # Extract JSON from streaming response
+        content = response["choices"][0]["message"]["content"]
+        json_text = self.llm._extract_json(content)
+        parsed = json.loads(json_text)
+        parsed = self.llm._ensure_object(parsed)
+        
+        return Thought.model_validate(parsed)
 
     async def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Any:  # noqa: ANN401
         """
@@ -283,6 +305,23 @@ Examples:
 
             self.context.add_assistant_response(formatted)
             
+            # 检查任务是否完成，如果是则添加系统消息促使Agent结束
+            if self._is_task_complete(result):
+                self.context.add_system_prompt("""
+### Task Completion Check
+
+The previous action has produced tangible results (saved files, data, or findings). 
+You should now review these results and determine if the user's original request has been fulfilled.
+
+If the task is complete:
+- Set next_action='finish'
+- Provide a final summary of what was accomplished
+
+If the task needs more work:
+- Continue with next_action='use_tool' or 'use_skill'
+- Explain what still needs to be done
+""")
+            
             # Update shared memory with SubAgent metadata（只保留关键信息）
             if result.metadata:
                 for key, value in result.metadata.items():
@@ -293,6 +332,40 @@ Examples:
             self.context.add_assistant_response(f"SubAgent failed: {result.error}")
 
         return result
+
+    def _is_task_complete(self, subagent_result: SubAgentResult) -> bool:
+        """
+        检查任务是否完成
+        
+        判断标准：
+        - SkillResult 有 file_path（保存了文件）
+        - SkillResult 有实际数据结果
+        - 或者结果中明确标记为任务完成
+        """
+        if not subagent_result.success:
+            return False
+        
+        result = subagent_result.result
+        has_tangible_results = False
+        
+        # Check if result is SkillResult
+        if hasattr(result, 'file_path') and result.file_path:
+            has_tangible_results = True
+        
+        if hasattr(result, 'file_paths') and result.file_paths:
+            has_tangible_results = True
+        
+        if hasattr(result, 'has_data') and result.has_data():
+            has_tangible_results = True
+        
+        if hasattr(result, 'confirmation') and 'complete' in str(result.confirmation).lower():
+            has_tangible_results = True
+        
+        # Update shared memory flag
+        if has_tangible_results:
+            self.context.update_shared_memory('has_tangible_results', True)
+        
+        return has_tangible_results
 
     async def run(self, user_request: str, max_steps: int = 10) -> str:
         """
@@ -343,6 +416,20 @@ Examples:
             self.context.add_thought(thought.reasoning)
 
             print(f"\n[Step {step + 1}] Thought: {thought.reasoning}")
+            
+            # Safety check: if too many steps without tangible results, prompt Agent to finish
+            if step >= 5 and not self.context.shared_memory.get('has_tangible_results'):
+                self.context.add_system_prompt("""
+### Progress Check
+
+You have taken {step + 1} steps but haven't produced tangible results yet.
+Consider if you should:
+1. Actually execute the tools/skills to produce results, OR
+2. Set next_action='finish' if the task is somehow complete, OR  
+3. Respond to user asking for clarification
+
+Remember: Activating a skill or tool is not the same as completing the task.
+""".format(step=step))
 
             # Check if finished
             if thought.next_action == "finish":

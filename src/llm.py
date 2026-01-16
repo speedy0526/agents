@@ -114,21 +114,83 @@ class LLMClient:
         messages: list[dict],
         tools: Optional[list[dict]] = None,
         tool_choice: Optional[str] = None,
-        response_format: Optional[dict] = None
+        response_format: Optional[dict] = None,
+        stream: bool = False
     ) -> Dict[str, Any]:
         """Send chat completion request"""
         start = time.time()
         try:
-            response = await self._make_request(messages, tools, tool_choice, response_format)
-            duration = time.time() - start
-            choice = response.choices[0]
-            self.logger.info(f"Chat success: {duration:.2f}s, finish={choice.finish_reason}")
-            if self.log_requests and choice.message.content:
-                self.logger.debug(f"Response: {choice.message.content[:200]}...")
-            return response
+            if stream:
+                return await self._stream_chat(messages, tools, tool_choice, response_format)
+            else:
+                response = await self._make_request(messages, tools, tool_choice, response_format)
+                duration = time.time() - start
+                choice = response.choices[0]
+                self.logger.info(f"Chat success: {duration:.2f}s, finish={choice.finish_reason}")
+                if self.log_requests and choice.message.content:
+                    self.logger.debug(f"Response: {choice.message.content[:200]}...")
+                return response
         except Exception as e:
             duration = time.time() - start
             self.logger.error(f"Chat failed: {duration:.2f}s, error: {e}")
+            raise
+
+    async def _stream_chat(
+        self,
+        messages: list[dict],
+        tools: Optional[list[dict]] = None,
+        tool_choice: Optional[str] = None,
+        response_format: Optional[dict] = None
+    ) -> Dict[str, Any]:
+        """Stream chat completion and print chunks in real-time"""
+        print(f"\n{'='*60}")
+        print("🤖 LLM Streaming Response")
+        print(f"{'='*60}\n")
+        
+        full_content = ""
+        start = time.time()
+        
+        try:
+            async with LLMClient._semaphore:
+                await asyncio.sleep(self.rate_limit_delay)
+                
+                params = {"model": self.model, "messages": messages, "stream": True}
+                if tools is not None:
+                    params["tools"] = tools
+                if tool_choice is not None:
+                    params["tool_choice"] = tool_choice
+                if response_format is not None:
+                    params["response_format"] = response_format
+                
+                stream = await self.client.chat.completions.create(**params)
+                
+                print("💭 ", end="", flush=True)
+                
+                async for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        full_content += content
+                        print(content, end="", flush=True)
+                
+                duration = time.time() - start
+                print(f"\n\n{'='*60}")
+                print(f"✅ Stream complete: {duration:.2f}s")
+                print(f"{'='*60}\n")
+                
+                # Return a mock response object for compatibility
+                return {
+                    "choices": [{
+                        "message": {
+                            "content": full_content,
+                            "role": "assistant"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                
+        except Exception as e:
+            duration = time.time() - start
+            print(f"\n❌ Stream failed: {duration:.2f}s, error: {e}\n")
             raise
 
     def _extract_json(self, text: str) -> str:
