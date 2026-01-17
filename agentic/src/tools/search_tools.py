@@ -47,26 +47,11 @@ class SearchGoogleTool(BaseTool):
                 results = []
                 print(f"\n{'=' * 60}")
                 for r in ddgs.text(query, max_results=max_results):
-                    # try:
-                    #     response = requests.get(
-                    #         r.get("href", ""),
-                    #         headers={
-                    #             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-                    #             "Accept-Language": "en-US,en;q=0.9",
-                    #             "Accept-Encoding": "gzip, deflate, br",
-                    #         },
-                    #     )
-                    #     doc = Document(response.text)
-                    #     html_content = doc.summary()
-                    # except Exception as e:
-                    #     html_content = str(e)
-
                     results.append(
                         {
                             "title": r.get("title", ""),
                             "url": r.get("href", ""),
-                            "snippet": r.get("body", ""),
-                            "content": html_content,
+                            "snippet": r.get("body", "")
                         }
                     )
 

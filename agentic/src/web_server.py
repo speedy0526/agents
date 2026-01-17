@@ -33,10 +33,11 @@ app.add_middleware(
 
 
 class ConnectionManager:
-    """管理 WebSocket 连接"""
+    """管理 WebSocket 连接和 StreamManager"""
 
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
+        self.stream_managers: Dict[str, StreamManager] = {}
 
     async def connect(self, websocket: WebSocket, session_id: str):
         """建立连接"""
@@ -47,10 +48,20 @@ class ConnectionManager:
         """断开连接"""
         if session_id in self.active_connections:
             del self.active_connections[session_id]
+        if session_id in self.stream_managers:
+            del self.stream_managers[session_id]
 
     def get_connection(self, session_id: str) -> WebSocket:
         """获取连接"""
         return self.active_connections.get(session_id)
+
+    def set_stream_manager(self, session_id: str, stream_manager: StreamManager):
+        """设置 StreamManager"""
+        self.stream_managers[session_id] = stream_manager
+
+    def get_stream_manager(self, session_id: str) -> StreamManager:
+        """获取 StreamManager"""
+        return self.stream_managers.get(session_id)
 
 
 # 全局连接管理器
@@ -142,6 +153,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
         # 创建 StreamManager
         stream_manager = StreamManager(websocket, session_id)
+        manager.set_stream_manager(session_id, stream_manager)
 
         # 监听用户消息
         while True:
@@ -168,6 +180,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 new_session_id = uuid.uuid4().hex[:8]
                 agent = agent_manager.get_or_create_agent(new_session_id)
                 await stream_manager.send_event("new_session", new_session_id)
+
+            elif event == "abort":
+                # 中止当前执行
+                if stream_manager:
+                    stream_manager.abort()
+                    await stream_manager.send_event("agent_info", "已发送中止信号")
+                else:
+                    await websocket.send_json({
+                        "event": "error",
+                        "content": "没有正在执行的任务"
+                    })
 
     except WebSocketDisconnect:
         manager.disconnect(session_id)

@@ -136,6 +136,23 @@ class SkillSubAgent(SubAgent):
         while execution_steps < max_skill_steps:
             execution_steps += 1
 
+            # Progress check: if many steps but no results, remind AI to complete
+            if execution_steps > 3 and not files_saved and len(outputs) == 0:
+                print(f"⚠️ Progress check: {execution_steps} steps without tangible results")
+                self.context.add_system_prompt(
+                    f"""
+### Progress Check - Step {execution_steps}
+
+You have taken {execution_steps} steps but haven't produced tangible results yet (no files saved, no data collected).
+
+You should now:
+1. Use the available tools to ACTUALLY execute and produce results, OR
+2. If you believe the task is complete based on gathered information, clearly state "Task complete"
+
+Do NOT just continue thinking without taking action or completing.
+"""
+                )
+
             # Get messages (system prompt + tool results)
             messages = self.context.get_messages(include_goals=False)
 
@@ -281,7 +298,13 @@ Do NOT continue indefinitely. Once you have:
 - Gathered and compiled information, OR
 - Otherwise fulfilled the user's request
 
-Then clearly state: "Task complete" or similar.
+Then immediately stop and state one of these exact phrases:
+- "Task complete"
+- "Report generated"
+- "File saved"
+- "Finished"
+
+Do NOT continue to think or call more tools after stating completion.
 """
         self.context.add_system_prompt(task_completion)
 

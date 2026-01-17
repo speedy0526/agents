@@ -10,6 +10,11 @@ let sessionId = null;
 let isConnected = false;
 let isExecuting = false;
 
+// 流式消息累积
+let currentThinkingElement = null;
+let currentThinkingContent = '';
+let currentActionElement = null;
+
 // DOM 元素引用
 const elements = {
     messagesContainer: null,
@@ -153,11 +158,31 @@ function handleEvent(data) {
  * 处理 Agent 思考事件
  */
 function handleAgentThinking(content, metadata) {
-    // 添加到消息列表
-    addMessage('thinking', content, metadata);
+    // 累积内容到当前思考消息
+    if (!currentThinkingElement) {
+        // 第一次收到思考内容，创建新消息并显示等待状态
+        addMessage('thinking', content, metadata);
+        // 获取刚创建的消息内容元素
+        const messages = elements.messagesContainer.querySelectorAll('.message.thinking .message-content');
+        currentThinkingElement = messages[messages.length - 1];
 
-    // 添加到执行时间轴
-    addTimelineItem('thinking', '思考', content, metadata);
+        // 显示等待状态
+        updateMessageExecutingStatus(currentThinkingElement, true, '正在思考...');
+
+        currentThinkingContent = content;
+    } else {
+        // 收到实际内容，移除等待状态并显示思考内容
+        updateMessageExecutingStatus(currentThinkingElement, false);
+
+        // 追加内容到当前思考消息
+        currentThinkingContent += content;
+        currentThinkingElement.innerHTML = formatMessage(currentThinkingContent);
+    }
+
+    // 添加到执行时间轴（只在第一次时添加）
+    if (metadata && metadata.step) {
+        addTimelineItem('thinking', '思考', content, metadata);
+    }
 
     // 更新执行状态
     isExecuting = true;
@@ -171,8 +196,25 @@ function handleAgentAction(content, metadata) {
     const actionType = metadata?.action_type || '执行动作';
     const description = content;
 
+    // 重置思考累积
+    currentThinkingElement = null;
+    currentThinkingContent = '';
+
     // 添加到消息列表
     addMessage('action', `${actionType}: ${description}`, metadata);
+
+    // 获取刚创建的消息内容元素，并显示等待状态
+    const messages = elements.messagesContainer.querySelectorAll('.message.action .message-content');
+    currentActionElement = messages[messages.length - 1];
+
+    // 根据不同类型显示不同的等待文本
+    let statusText = '执行中...';
+    if (metadata?.tool_name) {
+        statusText = `正在调用工具: ${metadata.tool_name}`;
+    } else if (metadata?.subagent_command) {
+        statusText = `正在调用技能: ${metadata.subagent_command}`;
+    }
+    updateMessageExecutingStatus(currentActionElement, true, statusText);
 
     // 添加到执行时间轴
     addTimelineItem('action', actionType, description, metadata);
@@ -182,6 +224,16 @@ function handleAgentAction(content, metadata) {
  * 处理 Agent 结果事件
  */
 function handleAgentResult(content, metadata) {
+    // 移除动作消息的等待状态
+    if (currentActionElement) {
+        updateMessageExecutingStatus(currentActionElement, false);
+        currentActionElement = null;
+    }
+
+    // 重置思考累积
+    currentThinkingElement = null;
+    currentThinkingContent = '';
+
     // 添加到消息列表
     addMessage('result', content, metadata);
 
@@ -193,6 +245,16 @@ function handleAgentResult(content, metadata) {
  * 处理 Agent 完成事件
  */
 function handleAgentComplete(content) {
+    // 移除动作消息的等待状态（如果有）
+    if (currentActionElement) {
+        updateMessageExecutingStatus(currentActionElement, false);
+        currentActionElement = null;
+    }
+
+    // 重置思考累积
+    currentThinkingElement = null;
+    currentThinkingContent = '';
+
     // 添加到消息列表
     addMessage('assistant', content);
 
@@ -210,6 +272,12 @@ function handleAgentComplete(content) {
 function handleAgentInfo(content) {
     // 显示系统信息
     addMessage('system', content);
+
+    // 如果是中止信息，重置执行状态
+    if (content.includes('中止') || content.includes('aborted')) {
+        isExecuting = false;
+        updateSendButtonState();
+    }
 }
 
 /**
@@ -230,6 +298,16 @@ function handleNewSession(newSessionId) {
  * 处理错误事件
  */
 function handleError(content) {
+    // 移除动作消息的等待状态（如果有）
+    if (currentActionElement) {
+        updateMessageExecutingStatus(currentActionElement, false);
+        currentActionElement = null;
+    }
+
+    // 重置思考累积
+    currentThinkingElement = null;
+    currentThinkingContent = '';
+
     // 添加错误消息
     addMessage('error', content);
 
@@ -332,6 +410,42 @@ function updateSendButtonState() {
 
     if (elements.sendButton) {
         elements.sendButton.disabled = !canSend;
+    }
+
+    // 更新中止按钮显示
+    const abortButton = document.getElementById('abortButton');
+    if (abortButton) {
+        abortButton.style.display = isExecuting ? 'flex' : 'none';
+    }
+}
+
+/**
+ * 更新消息块的等待状态
+ * @param {HTMLElement} contentElement - 消息的内容元素
+ * @param {boolean} show - 是否显示等待状态
+ * @param {string} text - 显示的文本
+ */
+function updateMessageExecutingStatus(contentElement, show, text = '执行中...') {
+    if (!contentElement) return;
+
+    if (show) {
+        // 检查是否已有等待状态
+        if (!contentElement.querySelector('.executing-status')) {
+            // 添加等待状态
+            const executingDiv = document.createElement('div');
+            executingDiv.className = 'executing-status';
+            executingDiv.innerHTML = `
+                <div class="spinner"></div>
+                <span>${text}</span>
+            `;
+            contentElement.appendChild(executingDiv);
+        }
+    } else {
+        // 移除等待状态
+        const executingDiv = contentElement.querySelector('.executing-status');
+        if (executingDiv) {
+            executingDiv.remove();
+        }
     }
 }
 
@@ -534,11 +648,43 @@ function scrollToExecutionBottom() {
 }
 
 /**
+ * 中止当前执行
+ */
+function abortExecution() {
+    if (!isConnected || !isExecuting) {
+        return;
+    }
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            event: 'abort'
+        }));
+
+        // 添加中止提示
+        addMessage('system', '正在中止执行...');
+
+        // 移除动作消息的等待状态（如果有）
+        if (currentActionElement) {
+            updateMessageExecutingStatus(currentActionElement, false);
+            currentActionElement = null;
+        }
+
+        // 立即更新状态（等待后端确认）
+        isExecuting = false;
+        updateSendButtonState();
+    }
+}
+
+/**
  * 新建会话
  */
 function newSession() {
     sessionId = generateSessionId();
     updateSessionIdDisplay(sessionId);
+
+    // 重置思考累积
+    currentThinkingElement = null;
+    currentThinkingContent = '';
 
     // 清空消息
     elements.messagesContainer.innerHTML = '';

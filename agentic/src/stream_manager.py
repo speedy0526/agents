@@ -3,6 +3,7 @@ Stream Manager - 适配 Agent.run() 为 WebSocket 流式输出
 """
 
 import json
+import time
 import uuid
 from typing import Dict, Any, Optional
 from fastapi import WebSocket
@@ -26,13 +27,18 @@ class StreamManager:
     def __init__(self, websocket: WebSocket, session_id: str):
         """
         初始化 StreamManager
-        
+
         Args:
             websocket: WebSocket 连接
             session_id: 会话 ID
         """
         self.websocket = websocket
         self.session_id = session_id
+        self._abort = False  # 中止标志
+
+    def abort(self):
+        """中止当前执行"""
+        self._abort = True
 
     async def send_event(self, event_type: str, content: str, metadata: Optional[Dict[str, Any]] = None):
         """
@@ -61,12 +67,93 @@ class StreamManager:
         import datetime
         return datetime.datetime.now().isoformat()
 
+    async def think_stream(self, agent: MinimalAgent) -> Thought:
+        """
+        流式执行 think 并实时推送到 WebSocket
+
+        Args:
+            agent: MinimalAgent 实例
+
+        Returns:
+            Thought 对象
+        """
+        messages = agent.context.get_messages(include_goals=True)
+
+        # Build meta instruction for Thought generation
+        meta_instruction = """<OUTPUT_FORMAT>
+You must respond with JSON using ONLY these fields:
+
+Required fields: reasoning, next_action, tool_name (optional), tool_parameters (optional), subagent_type (optional), subagent_command (optional)
+
+Schema:
+{
+  "reasoning": "Your reasoning process",
+  "next_action": "One of: use_tool, use_skill, call_chain, think, respond_to_user, finish",
+  "tool_name": "Name of tool to use (if next_action='use_tool')",
+  "tool_parameters": {"param1": "value1"},
+  "subagent_type": "Type of SubAgent (skill, tool, chain)",
+  "subagent_command": "Command for SubAgent"
+}
+
+CRITICAL RULES:
+1. Your entire response must be a single JSON object
+2. Use ONLY the exact field names listed above
+3. Do NOT include any fields like 'query', 'search', 'answer', etc.
+4. Do NOT wrap in markdown code blocks
+5. Output nothing except the JSON object
+
+Examples:
+- To use a tool: {"reasoning": "I need to search", "next_action": "use_tool", "tool_name": "search_google", "tool_parameters": {"query": "Python"}}
+- To use a skill: {"reasoning": "I need to research", "next_action": "use_skill", "subagent_type": "skill", "subagent_command": "research"}
+- To finish: {"reasoning": "Task complete", "next_action": "finish"}
+</OUTPUT_FORMAT>"""
+
+        messages_with_instruction = [
+            {"role": "system", "content": meta_instruction},
+            *messages,
+        ]
+
+        # 使用 LLM 的流式 API
+        full_content = ""
+        start = time.time()
+
+        # 发送思考开始事件
+        await self.send_event("agent_thinking", "💭 Thinking...")
+
+        try:
+            # 使用现有的流式接口
+            params = {"model": agent.llm.model, "messages": messages_with_instruction, "stream": True}
+            stream = await agent.llm.client.chat.completions.create(**params)
+
+            async for chunk in stream:
+                # 检查中止标志
+                if self._abort:
+                    break
+
+                if chunk.choices and chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    full_content += content
+                    # 实时发送思考内容
+                    await self.send_event("agent_thinking", content)
+
+            # 解析 JSON
+            json_text = agent.llm._extract_json(full_content)
+            parsed = json.loads(json_text)
+            parsed = agent.llm._ensure_object(parsed)
+
+            return Thought.model_validate(parsed)
+
+        except Exception as e:
+            duration = time.time() - start
+            await self.send_event("error", f"Thinking failed: {e}")
+            raise
+
     async def stream_agent_run(self, agent: MinimalAgent, user_request: str, max_steps: int = 10):
         """
         执行 Agent 并流式输出事件到 WebSocket
-        
+
         修改自 MinimalAgent.run()，在关键步骤插入 WebSocket 推送逻辑
-        
+
         Args:
             agent: MinimalAgent 实例
             user_request: 用户请求
@@ -98,26 +185,20 @@ class StreamManager:
         agent.context.set_goals([f"Complete: {user_request}"])
 
         # 发送初始信息
-        await self.send_event("agent_info", {
-            "tools_count": len(agent.tools),
-            "available_skills": ', '.join(agent.skill_manager.get_skill_names()) or 'None',
-            "context_summary": agent.context.get_summary()
-        })
+        await self.send_event("agent_info", f"Ready. Tools: {len(agent.tools)}, Skills: {', '.join(agent.skill_manager.get_skill_names()) or 'None'}")
 
         for step in range(max_steps):
+            # 检查中止标志
+            if self._abort:
+                await self.send_event("agent_info", "⚠️ 任务已被中止")
+                return "Task aborted by user"
+
             # Compress context if needed
             agent.context.compress_if_needed()
 
-            # Think
-            thought = await agent.think()
+            # Think with streaming
+            thought = await self.think_stream(agent)
             agent.context.add_thought(thought.reasoning)
-
-            # 发送思考事件
-            await self.send_event(
-                "agent_thinking",
-                thought.reasoning,
-                {"step": step + 1}
-            )
 
             # Safety check
             if step >= 5 and not agent.context.shared_memory.get("has_tangible_results"):
