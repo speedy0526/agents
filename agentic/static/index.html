@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic - AI Agent Interactive UI</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-left">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="16" cy="16" r="14" stroke="#2563EB" stroke-width="2"/>
+                    <path d="M10 16L14 20L22 12" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="app-name">Agentic</span>
+            </div>
+        </div>
+        <div class="navbar-right">
+            <button class="btn btn-secondary" onclick="newSession()">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M9 4V14M4 9H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                新建会话
+            </button>
+            <button class="btn btn-secondary" onclick="clearContext()">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 6H14M5 6V13C5 13.5304 5.21071 14.0391 5.58579 14.4142C5.96086 14.7893 6.46957 15 7 15H11C11.5304 15 12.0391 14.7893 12.4142 14.4142C12.7893 14.0391 13 13.5304 13 13V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                清空上下文
+            </button>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot" id="statusDot"></span>
+                <span class="status-text" id="statusText">未连接</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 - 左右分栏布局 -->
+    <main class="main-container">
+        <!-- 左侧：对话区域 -->
+        <section class="chat-section">
+            <div class="messages-container" id="messagesContainer">
+                <div class="welcome-message">
+                    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="32" cy="32" r="28" stroke="#2563EB" stroke-width="2"/>
+                        <path d="M20 32L28 40L44 24" stroke="#2563EB" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <h2>欢迎使用 Agentic</h2>
+                    <p>一个强大的 AI Agent 系统，支持实时对话和智能任务执行</p>
+                    <div class="feature-tags">
+                        <span class="tag">🤖 智能推理</span>
+                        <span class="tag">🛠️ 工具调用</span>
+                        <span class="tag">📚 Skills 系统</span>
+                        <span class="tag">⚡ 实时交互</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 输入区域 -->
+            <div class="input-section">
+                <textarea 
+                    id="messageInput" 
+                    class="message-input" 
+                    placeholder="输入你的问题或任务..."
+                    rows="2"
+                    onkeydown="handleKeyDown(event)"
+                ></textarea>
+                <div class="input-actions">
+                    <div class="session-info" id="sessionInfo">
+                        会话 ID: <span id="sessionId">生成中...</span>
+                    </div>
+                    <button class="btn btn-primary send-button" onclick="sendMessage()" id="sendButton">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 10L17 3L10 17L8 11L3 10Z" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+                        </svg>
+                        发送
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 右侧：Agent 执行过程 -->
+        <section class="execution-section">
+            <div class="section-header">
+                <h3>
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 4V16M4 10H16" stroke="#6B7280" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    Agent 执行过程
+                </h3>
+                <button class="btn-icon" onclick="toggleExecutionPanel()" title="折叠/展开">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 6L8 11L13 6" stroke="#6B7280" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="execution-timeline" id="executionTimeline">
+                <div class="empty-state">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="24" cy="24" r="20" stroke="#E5E7EB" stroke-width="2"/>
+                        <path d="M24 14V24M24 24L20 20" stroke="#9CA3AF" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                    <p>Agent 执行过程将在这里显示</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 底部状态栏 -->
+    <footer class="status-bar">
+        <div class="status-bar-left">
+            <span>Agentic v1.0.0</span>
+        </div>
+        <div class="status-bar-right">
+            <span id="connectionInfo">WebSocket: 未连接</span>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
