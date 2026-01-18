@@ -17,23 +17,28 @@ class ChainSubAgent(SubAgent):
     def __init__(
         self,
         agent_context_snapshot: Optional[Dict[str, Any]] = None,
-        subagents: Optional[Dict[str, 'SubAgentType']] = None
+        subagents: Optional[Dict[str, 'SubAgentType']] = None,
+        stream_manager: Optional[Any] = None
     ):
         """
         初始化ChainSubAgent
-        
+
         Args:
             agent_context_snapshot: Agent上下文的快照
             subagents: 可用的SubAgent字典
+            stream_manager: StreamManager实例，用于发送WebSocket事件
         """
-        # 创建独立的ContextManager（不调用super().__init__）
+        # 调用父类初始化
+        super().__init__(stream_manager)
+
+        # 创建独立的ContextManager
         from ..context import ContextManager
         import uuid
 
         # 使用唯一的 session_id 让每个 SubAgent 有独立的 session
         session_id = f"chain_{uuid.uuid4().hex[:8]}"
         self.context = ContextManager(auto_save=False, session_id=session_id)
-        
+
         self.subagents = subagents or {}
     
     async def execute(self, command: str, parameters: Dict[str, Any]) -> SubAgentResult:
@@ -76,15 +81,19 @@ class ChainSubAgent(SubAgent):
         
         results = []
         current_input = parameters
-        
+
+        await self._send_event("agent_thinking", f"🔗 开始执行链，共 {len(steps)} 个步骤")
+
         # 执行每个步骤
         for i, step in enumerate(steps, 1):
             subagent_type = step.get("type")  # tool/skill/chain
-            
+
+            await self._send_event("agent_thinking", f"执行步骤 {i}/{len(steps)}: {subagent_type}")
+
             # 动态创建SubAgent（每个步骤都有独立上下文）
             if subagent_type == "tool":
                 from .tool_subagent import ToolSubAgent
-                subagent = ToolSubAgent(self.context.get_snapshot(), self.subagents.get('tools', {}))
+                subagent = ToolSubAgent(self.context.get_snapshot(), self.subagents.get('tools', {}), self.stream_manager)
             elif subagent_type == "skill":
                 from .skill_subagent import SkillSubAgent
                 # 注意：这里需要传递skill_manager，实际实现需要调整
@@ -92,11 +101,12 @@ class ChainSubAgent(SubAgent):
                 continue
             elif subagent_type == "chain":
                 from .chain_subagent import ChainSubAgent
-                subagent = ChainSubAgent(self.context.get_snapshot(), self.subagents)
+                subagent = ChainSubAgent(self.context.get_snapshot(), self.subagents, self.stream_manager)
             else:
                 subagent = None
-            
+
             if not subagent:
+                await self._send_event("agent_action", f"❌ 步骤 {i}: 未找到 SubAgent 类型 '{subagent_type}'")
                 return SubAgentResult(
                     success=False,
                     result=None,
@@ -108,15 +118,16 @@ class ChainSubAgent(SubAgent):
                         "command": command
                     }
                 )
-            
+
             try:
                 # 执行SubAgent
                 result = await subagent.execute(
                     command=step["command"],
                     parameters=current_input
                 )
-                
+
                 if not result.success:
+                    await self._send_event("agent_result", f"❌ 步骤 {i} 执行失败: {result.error}")
                     return SubAgentResult(
                         success=False,
                         result=None,
@@ -128,13 +139,15 @@ class ChainSubAgent(SubAgent):
                             "subagent_error": result.error
                         }
                     )
-                
+
                 results.append(result)
-                
+                await self._send_event("agent_result", f"✅ 步骤 {i} 完成: {result.summary}")
+
                 # 将当前结果作为下一步的输入
                 current_input = {"previous_result": result.result}
-                
+
             except Exception as e:
+                await self._send_event("agent_result", f"❌ 步骤 {i} 异常: {str(e)}")
                 return SubAgentResult(
                     success=False,
                     result=None,
@@ -146,9 +159,11 @@ class ChainSubAgent(SubAgent):
                         "error_type": type(e).__name__
                     }
                 )
-        
+
         execution_time = time.time() - start_time
-        
+
+        await self._send_event("agent_result", f"🔗 链执行完成，共 {len(results)} 个步骤，总耗时 {execution_time:.2f}s")
+
         # 汇总所有步骤的结果
         total_tokens = sum(r.tokens_used or 0 for r in results)
         total_time = sum(r.execution_time or 0 for r in results)

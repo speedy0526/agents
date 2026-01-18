@@ -20,6 +20,7 @@ class SkillSubAgent(SubAgent):
         agent_context_snapshot: Dict[str, Any],
         skill_manager: "SkillManager",
         skill_name: str,
+        stream_manager: Any = None,
     ):
         """
         初始化SkillSubAgent
@@ -28,7 +29,11 @@ class SkillSubAgent(SubAgent):
             agent_context_snapshot: Agent上下文的快照
             skill_manager: Skill管理器
             skill_name: 要执行的skill名称
+            stream_manager: StreamManager实例，用于发送WebSocket事件
         """
+        # 调用父类初始化
+        super().__init__(stream_manager)
+
         # 从快照中提取user_request
         self.user_request = agent_context_snapshot.get("user_request", "")
 
@@ -36,7 +41,7 @@ class SkillSubAgent(SubAgent):
         self.skill_manager = skill_manager
         self.skill_name = skill_name
 
-        # 创建独立的ContextManager（不调用super().__init__）
+        # 创建独立的ContextManager
         from ..context import ContextManager
 
         # 使用唯一的 session_id 避免 session 文件冲突
@@ -111,12 +116,9 @@ class SkillSubAgent(SubAgent):
                 },
             )
 
-        print(f"\n{'=' * 60}")
-        print(f"🎯 Skill Execution: {command}")
-        print(f"{'=' * 60}")
-        print(f"   Request: {user_request}")
-        print(f"   Available tools: {list(filtered_tools.keys())}")
-        print(f"{'=' * 60}\n")
+        await self._send_event("agent_thinking", f"🎯 开始执行 Skill: {command}")
+        await self._send_event("agent_action", f"用户请求: {user_request}")
+        await self._send_event("agent_action", f"可用工具: {list(filtered_tools.keys())}")
 
         # Initialize context
         self._init_skill_context(skill, user_request, filtered_tools)
@@ -138,7 +140,7 @@ class SkillSubAgent(SubAgent):
 
             # Progress check: if many steps but no results, remind AI to complete
             if execution_steps > 3 and not files_saved and len(outputs) == 0:
-                print(f"⚠️ Progress check: {execution_steps} steps without tangible results")
+                await self._send_event("agent_thinking", f"⚠️ 进度检查: 已执行 {execution_steps} 步，尚未产生实际产出")
                 self.context.add_system_prompt(
                     f"""
 ### Progress Check - Step {execution_steps}
@@ -158,26 +160,22 @@ Do NOT just continue thinking without taking action or completing.
 
             # Prompt LLM with skill instructions
             try:
-                print(f"\n{'=' * 60}")
-                print(f"🤖 Skill Step {execution_steps}")
-                print(f"{'=' * 60}")
+                await self._send_event("agent_thinking", f"🤖 步骤 {execution_steps}: AI 思考中...")
 
                 # Use streaming for skill LLM calls
-                print("\n💭 Skill AI Thinking...")
                 response = await llm.chat(messages=messages, stream=True)
                 response_text = response["choices"][0]["message"]["content"]
                 if not response_text:
                     continue
 
-                print(f"\n🎯 AI Response: {response_text[:200]}...")
-                print(f"{'=' * 60}\n")
+                await self._send_event("agent_thinking", f"💭 AI 思考: {response_text[:300]}...")
 
                 # Add AI response to context
                 self.context.add_assistant_response(response_text)
 
                 # Check if skill indicates completion
                 if self._is_skill_complete(response_text):
-                    print(f"✅ Skill '{command}' completed")
+                    await self._send_event("agent_result", f"✅ Skill '{command}' 已完成")
                     break
 
                 # Extract and execute tool calls from response
@@ -199,14 +197,14 @@ Do NOT just continue thinking without taking action or completing.
                     # No tool calls made, might be asking for more thinking
                     # or indicating completion
                     if self._is_skill_complete(response_text):
-                        print(f"✅ Skill '{command}' completed")
+                        await self._send_event("agent_result", f"✅ Skill '{command}' 已完成")
                         break
                     # Continue to next iteration (AI will call tools next)
 
             except Exception as e:
                 error_msg = f"Step {execution_steps}: {str(e)}"
                 errors.append(error_msg)
-                print(f"❌ {error_msg}")
+                await self._send_event("agent_action", f"❌ {error_msg}")
 
                 # If too many errors, abort
                 if len(errors) >= 3:
@@ -217,6 +215,8 @@ Do NOT just continue thinking without taking action or completing.
 
         # Determine success
         success = len(errors) < 3 and (len(files_saved) > 0 or len(outputs) > 0)
+
+        await self._send_event("agent_result", f"🎯 Skill 执行{'成功' if success else '失败'}: {execution_steps} 步，{len(tool_calls)} 次工具调用，耗时 {execution_time:.2f}s")
 
         skill_result = SkillResult(
             success=success,
@@ -356,6 +356,9 @@ Do NOT continue to think or call more tools after stating completion.
             for match in matches:
                 tool_name = match.group(1).strip()
 
+                # 发送工具调用信息
+                await self._send_event("agent_action", f"🔧 调用工具: {tool_name}")
+
                 # Try to extract parameters
                 param_pattern = r"\{.*?\}"
                 param_match = re.search(
@@ -407,7 +410,7 @@ Do NOT continue to think or call more tools after stating completion.
                         )
 
                         tool_calls.append(result_obj)
-                        print(f"✅ Tool '{tool_name}' executed")
+                        await self._send_event("agent_result", f"✅ 工具 '{tool_name}' 执行成功: {result.summary if hasattr(result, 'summary') else str(result)}")
 
                     except Exception as e:
                         error_record = {
@@ -417,7 +420,7 @@ Do NOT continue to think or call more tools after stating completion.
                             "error": str(e),
                         }
                         tool_calls.append(error_record)
-                        print(f"❌ Tool '{tool_name}' failed: {e}")
+                        await self._send_event("agent_result", f"❌ 工具 '{tool_name}' 执行失败: {e}")
 
                 # Break after first tool call to avoid duplicate processing
                 break

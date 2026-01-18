@@ -45,7 +45,27 @@ class SubAgentResult(BaseModel):
 
 class SubAgent(ABC):
     """SubAgent抽象基类"""
-    
+
+    def __init__(
+        self,
+        stream_manager: Optional[Any] = None
+    ):
+        """
+        初始化SubAgent
+
+        Args:
+            stream_manager: StreamManager实例，用于发送WebSocket事件
+        """
+        self.stream_manager = stream_manager
+
+    async def _send_event(self, event_type: str, content: str, **kwargs) -> None:
+        """发送事件到前端对话区域"""
+        if self.stream_manager and hasattr(self.stream_manager, 'send_event'):
+            await self.stream_manager.send_event(event_type, content, **kwargs)
+        else:
+            # 如果没有stream_manager，降级为print输出
+            print(content)
+
     @abstractmethod
     async def execute(self, command: str, parameters: Dict[str, Any]) -> SubAgentResult:
         """

@@ -52,9 +52,11 @@ class MinimalAgent:
         tools: List[Any],
         skills_dirs: Optional[List[str]] = None,
         workspace_dir: str = "workspace",
+        stream_manager: Optional[Any] = None,
     ):
         self.llm = LLMClient()
         self.workspace_dir = workspace_dir
+        self.stream_manager = stream_manager
 
         # Initialize tools
         self.tools = {tool.name: tool for tool in tools}
@@ -245,7 +247,7 @@ Examples:
         # Route to appropriate SubAgent
         if thought.next_action == "use_tool":
             # Use ToolSubAgent for tool execution
-            subagent = ToolSubAgent(context_snapshot, self.tools)
+            subagent = ToolSubAgent(context_snapshot, self.tools, self.stream_manager)
             command = thought.tool_name
             parameters = thought.tool_parameters or {}
 
@@ -255,6 +257,7 @@ Examples:
                 agent_context_snapshot=context_snapshot,
                 skill_manager=self.skill_manager,
                 skill_name=thought.subagent_command,
+                stream_manager=self.stream_manager,
             )
             command = thought.subagent_command
             parameters = {
@@ -264,7 +267,7 @@ Examples:
 
         elif thought.next_action == "call_chain":
             # Create ChainSubAgent with snapshot
-            subagent = ChainSubAgent(context_snapshot, self.subagents)
+            subagent = ChainSubAgent(context_snapshot, self.subagents, self.stream_manager)
             command = thought.subagent_command
             parameters = {}
 

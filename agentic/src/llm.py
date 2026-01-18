@@ -167,10 +167,13 @@ class LLMClient:
                 print("💭 ", end="", flush=True)
                 
                 async for chunk in stream:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        full_content += content
-                        print(content, end="", flush=True)
+                    if chunk.choices and chunk.choices[0].delta:
+                        delta = chunk.choices[0].delta
+                        # 检查delta对象的content和reasoning_content属性
+                        content = getattr(delta, 'content', None) or getattr(delta, 'reasoning_content', None)
+                        if content:
+                            full_content += content
+                            print(content, end="", flush=True)
                 
                 duration = time.time() - start
                 print(f"\n\n{'='*60}")
